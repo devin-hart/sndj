@@ -176,6 +176,20 @@ frame_update:
     bne @nav_done           ; B held + d-pad = nudge (phrase code)
     jsr fr_nav
 @nav_done:
+    ; Y + up/down belongs to FRAME (steps). With B held or a block active
+    ; fr_nav is skipped, so drop them here too: PHRASE's own Y+UP/DOWN
+    ; path would page its chain and paint its header over this screen.
+    rep #$20
+.ACCU 16
+    lda pad_held
+    and #PAD_Y
+    beq +
+    lda pad_event
+    and #($FFFF - PAD_UP - PAD_DOWN)
+    sta pad_event
++
+    sep #$20
+.ACCU 8
     jsr fr_context
     ; the PHRASE editor on the cursor cell (its drawing is suppressed)
     lda ed_phrase

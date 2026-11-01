@@ -74,8 +74,16 @@ local plan = {
   {178, function() pad = { up = true } end}, {180, function() pad = {} end},
   {182, function() pad = { start = true } end}, {184, function() pad = {} end},
   {230, function() shot("play") end},
-  {232, function() pad = { x = true } end}, {234, function() pad = {} end},
-  {245, function() check(wram(0x0C) == 1, "X returns to PHRASE"); check(wram(0x18) == 0x11, "PHRASE opens on the cursor track's phrase (" .. string.format("%02X", wram(0x18)) .. ")"); shot("back")
+  -- B held + Y + UP must not reach PHRASE's Y+UP/DOWN path (it paints
+  -- the classic "PHRASE xx" header over FRAME's title line)
+  {236, function() pad = { b = true } end}, {238, function() pad = { b = true, y = true } end},
+  {240, function() pad = { b = true, y = true, up = true } end}, {242, function() pad = {} end},
+  {244, function()
+    local w = wram(0x0E00 + 64 + 6) + wram(0x0E00 + 64 + 7) * 256   -- x7 y1, odd layer
+    if (wram(0x0D66) & 0x80) == 0 then w = (wram(0x0400 + 64 + 14) + wram(0x0400 + 64 + 15) * 256) * 2 end
+    check(((w & 0x3FF) >> 1) == string.byte("R") - 32, "B+Y+UP leaves FRAME's title intact")
+    pad = { x = true } end}, {246, function() pad = {} end},
+  {257, function() check(wram(0x0C) == 1, "X returns to PHRASE"); check(wram(0x18) == 0x11, "PHRASE opens on the cursor track's phrase (" .. string.format("%02X", wram(0x18)) .. ")"); shot("back")
                    print(fails == 0 and "ALL PASS frame.lua" or ("FAILED frame.lua: " .. fails)); emu.stop(fails) end},
 }
 emu.addEventCallback(function()
