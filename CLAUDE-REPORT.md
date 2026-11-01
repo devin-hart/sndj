@@ -539,3 +539,56 @@ Status: SRAM byte ACCEPTED; draw-safety finding PARTLY WRONG → bug fixed in th
 - **Reproduced first:** a new step in `tools/checks/frame.lua` (B, then B+Y, then B+Y+UP, then check the title glyph at (7,1)) failed in both hi-res and classic before the fix.
 - **Fix:** `frame_update` now drops UP/DOWN from `pad_event` whenever Y is held, before the PHRASE editor runs (Y+UP/DOWN belongs to FRAME). `frame.lua` passes in both modes; `make check` **43/43**.
 - **For Gemini:** when verifying "unreachable", please also trace the paths where the guard is skipped (here: B held, `blk_mode`), not only the main one.
+
+### [2026-11-01] Claude — HANDOFF to Gemini: UI rewrite work packages
+Status: OPEN (assigned to Gemini by Devin)
+Commit/base: branch `ui-rewrite` @ the commit containing this entry (needs `git pull build\ui-rewrite.bundle ui-rewrite` first: the working tree was at `fbdc094`, without `framescr.asm`)
+
+Devin wants Gemini to take a share of the UI rewrite. Below: what exists, the rules, and work packages G0–G7 with acceptance criteria. **Do them in order; one commit per package.** Write a report entry per package (files, what changed, how verified, numbers) so I can review. Ask in `GEMINI-REPORT.md` if anything here is unclear rather than guessing.
+
+#### What exists (read these first)
+- `src/hires.asm` (bank 7): Mode 5 renderer, `hr_enter`, the hi-res SONG (`song_hr_init`, `song_hr_draw`), the `OPTIONS HI-RES` field, and the palette table `hr_tab_rom`. Header comment explains the two-layer trick.
+- `src/framescr.asm` (bank 7): the FRAME editor. Header comment explains how it reuses `phrase_update`.
+- `tools/makehrfont.py`: hi-res font + CGRAM image (`COLOURS` = the 8 palette roles).
+- `CLAUDE-REPORT.md` entries "UI rewrite spike", "FRAME editor" and "Review of Gemini: FRAME editor review".
+- Design target: the canvas mockups Devin has (page "Full rewrite (64 col, colour)").
+
+#### Rules (each one has bitten this project already)
+1. **Branch:** work only on `ui-rewrite`. `main`/`perf-and-fixes` and tag `v0.15-perf` are the rollback point. Don't touch them.
+2. **Code space:** bank 0 has **608 bytes** free; keep new code in **bank 7** (10.7 KB free), in `.SECTION ... FREE` blocks like `framescr.asm`. Bank-0 cost per package must be stated in its report (`python3`-free way: compare the ROM's $FF run before `$7FC0` in bank 0).
+3. **Calling across banks:** bank-7 code reaches bank-0 routines only through the `*_l` wrappers at the end of `src/text.asm` (`jsl text_puts_l` etc.); add a 4-byte wrapper for anything else. Bank-0 code enters bank 7 with `jsl` and the bank-7 routine ends in `rtl`.
+4. **Strings in bank 7** must be printed with DB = $87 (`phb / phk / plb / jsl text_puts_l / plb`, see `fr_puts`). WRAM below $2000 stays reachable because banks $80–$BF mirror it.
+5. **Assembler width state:** after any helper that returns with `sep #$20` (`hr_attr`, `fr_attr`), put `.ACCU 8` on the next line. WLA tracks `.ACCU` lexically; a missing one silently assembles 3-byte immediates.
+6. **Register contract** of the glyph routines: they clobber A, X, `tmp1`; they preserve Y, `tmp0`, `tmp2`. Screen loops keep counters in `tmp0`/dedicated vars, never `tmp1`.
+7. **Both modes:** every feature must work with HI-RES **off** (Mode 1, 32 columns, 2 colours: only `ATTR_TEXT/ACCENT/HILITE/DIM/PLAY`) and **on** (64 columns, 8 palettes). In bank-7 screen code use `fr_attr`-style mapping so palettes 5–7 fall back to TEXT in classic. Classic layout may drop a feature if it doesn't fit; say so in the report.
+8. **New WRAM** goes at the end of the overflow `.ENUM $0C00` block in `src/ram.inc` (it now ends `$0DA6`); hard limit `$0E00` (`SHADOW_HRB`). Never add to the `$0000` block (it's full; `$0400` is the tilemap).
+9. **Frame rate:** measure with `chk/fps`-style Lua (main-loop iterations per 120 frames while playing). SONG and FRAME are at 114–120 today; a package must not drop them below 110. Redraw only on change (see `song_draw_changed`, `fr_full`/`fr_input`).
+10. **Checks:** `make check` must stay **43/43**, run once with HI-RES off and once with it persisted on (SRAM `$000D` = 1). New behaviour gets a Lua check in `tools/checks/`.
+11. **File writing:** use your file/editor tools, never PowerShell string expansion (the `$`/backtick corruption from earlier). Re-read files after writing.
+
+#### G0 — Build setup on Windows (prerequisite)
+`check-windows.ps1` only runs checks on an existing ROM; Devin's machine can't assemble yet. Needed: WLA-DX 10.x (`wla-65816`, `wla-spc700`, `wlalink` Windows binaries), Python 3 (for `tools/*.py`), and either GNU make or a `build-windows.ps1` that runs the same steps as the Makefile's `all` target (font/logo/help/tables/pool generation, `makehrfont.py`, assemble, link, `tools/fixsum.py`). **Accept when** a Windows build of `ui-rewrite` is byte-identical to the ROM Claude built for the same commit (`build\sndj-0.15-ui-rewrite-<hash>.sfc`). Until then, Claude has to build and verify everything, which defeats the handoff.
+
+#### G1 — Hi-res status bar (small)
+Hi-res SONG and FRAME, row 1, after the title: song name (`SB_HEADER + SH_NAME`, 8 chars), tempo (`SH_BPM`, decimal, `0` means 150), play state (reuse `draw_status`'s logic), and ARAM used/free (the ECHO screen computes it: see `echoscr.asm` `str_ram`/`str_free`). Keep clear of the existing chrome at x59–63 (tick counter y1, PLAY y3, minimap y5–7). Classic: unchanged. **Accept:** values match the ECHO/PROJECT screens; redraws only when a value changes.
+
+#### G2 — Phrase preview on hi-res SONG (small)
+Right of the chain panel (`HS_CHX` = 38) is free from x47 on rows 5–20 *except* x59–63 rows 5–7 (minimap). Show the phrase at the chain panel's cursor step (or step 0): row, note (`draw_note_l`), instrument hex, command letter. 12 columns fit (x47–58). Hook into `song_hr_draw`'s panel section; same caching as `hr_lastch`. **Accept:** follows the cursor; empty chain/phrase draws blank; fps unchanged.
+
+#### G3 — Per-voice level meters (medium)
+`envx_mirror` (8 bytes, `src/ram.inc`) holds each voice's DSP ENVX (0–127), refreshed two voices per frame by `apu_update`. Draw a 1-cell meter per track using the block glyphs `GLYPH_BLOCK14/12/34/BLOCK` (`snes.inc`) in the header row of hi-res SONG (y4, under each track number) and FRAME (header row, the cell after the phrase id). Redraw only meters whose quantised level changed. Classic: SONG only if a free cell exists, else skip. **Accept:** meters move with playback in Mesen; zero when stopped; fps ≥ 110 playing.
+
+#### G4 — Command help in the FRAME inspector (small)
+Generate a table from `tools/commands.csv` (letter, short text, ≤ 22 chars) into a new `build/cmdhelp.inc` from a small Python step (add it to the Makefile/G0 build). Include it in bank 7. In `fr_draw_info`, after `V34`, print the short text for the cursor row's command (e.g. `VIB SPEED X DEPTH Y`). It must fit 64 columns in hi-res; in classic print it on row 23 instead. **Accept:** correct text for A–Z; empty command clears the line.
+
+#### G5 — FRAME gaps (medium)
+(a) HELP and LIVE return to FRAME when entered from it (`help_reopen`, `screen_reopen` tables; add `SCREEN_FRAME` → a long call to a new re-entry routine that redraws at the current `fr_row/fr_step/fr_trk` without resetting them). (b) Kit rows: show the kit slot's sample name like PHRASE does (`row_is_kit`, `draw_kit_name`; add `_l` wrappers; 3 chars fit the note column). (c) L/R shoulders move one track left/right in FRAME. **Accept:** extend `tools/checks/frame.lua` for (a) and (c); screenshot for (b).
+
+#### G6 — Beat-row tint via HDMA (medium, hi-res only)
+Tint every 4th grid row (the mockups' darker band) by changing CGRAM colour 0 / COLDATA per scanline with HDMA, not by touching the text layers (both are in use). Note: in Mode 5 the **sub screen's** backdrop is COLDATA, the main screen's is CGRAM 0; both must change or the band stripes. Rows are 8 scanlines; grid starts at y=5 (scanline 40, with the −1 V-scroll). Only on SONG/FRAME in hi-res; HDMA off everywhere else (`init.asm` zeroes `HDMAEN`). **Accept:** clean band in Mesen with blending off; no change to fps; checks unaffected.
+
+#### G7 — not for now
+INSTR waveform/envelope graphics and a purpose-drawn hi-res font stay with Claude (or later): they need a reserved dynamic-tile area and font design, and are the riskiest parts.
+
+#### How I'll review
+Per package: read the diff, build it in my sandbox, run the full check suite in both modes, measure fps, and compare screenshots. Findings go in this file.
