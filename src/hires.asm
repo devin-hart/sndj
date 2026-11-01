@@ -354,6 +354,7 @@ hr_dash2:
 ; chrome moves to x 59-63 via ui_xoff.
 .DEFINE HS_COL0  4
 .DEFINE HS_CHX   38
+.DEFINE HS_PHX   47
 
 song_hr_init:
     rep #$20
@@ -402,6 +403,29 @@ song_hr_init:
     lda #4
     sta text_y
     ldx #str_hr_ruler
+    jsr hr_s
+    ; phrase preview captions
+    rep #$20
+.ACCU 16
+    lda #ATTR_HILITE
+    jsr hr_attr
+.ACCU 8
+    lda #HS_PHX
+    sta text_x
+    lda #3
+    sta text_y
+    ldx #str_hr_phrase
+    jsr hr_s
+    rep #$20
+.ACCU 16
+    lda #ATTR_DIM
+    jsr hr_attr
+.ACCU 8
+    lda #HS_PHX
+    sta text_x
+    lda #4
+    sta text_y
+    ldx #str_hr_phruler
     jsr hr_s
     rtl
 
@@ -692,11 +716,228 @@ song_hr_draw:
     beq +
     jmp @step
 +
+    ; --- phrase preview panel (x47..58) ---
+    lda tmp2                ; chain id ($FF if none)
+    cmp #$FF
+    bne @ph_find_phrase
+    lda #$FF
+    sta tmp2 + 1            ; no chain -> no phrase ($FF)
+    bra @ph_hdr
+@ph_find_phrase:
+    lda chain_cy
+    cmp #16
+    bcs @ph_try_step0
+    rep #$30
+.ACCU 16
+    and #$00FF
+    asl                     ; chain_cy * 2
+    sta tmp1
+    lda tmp2
+    and #$00FF
+    asl
+    asl
+    asl
+    asl
+    asl                     ; chain * 32
+    clc
+    adc tmp1
+    tax
+    sep #$20
+.ACCU 8
+    lda.l $7E0000 + SB_CHAINS,x
+    cmp #$FF
+    bne @ph_got_phrase
+@ph_try_step0:
+    rep #$30
+.ACCU 16
+    lda tmp2
+    and #$00FF
+    asl
+    asl
+    asl
+    asl
+    asl                     ; chain * 32
+    tax
+    sep #$20
+.ACCU 8
+    lda.l $7E0000 + SB_CHAINS,x
+@ph_got_phrase:
+    sta tmp2 + 1            ; phrase id ($FF if none)
+
+@ph_hdr:
+    ; Phrase ID on row 3 at HS_PHX + 7 (x=54)
+    lda #HS_PHX + 7
+    sta text_x
+    lda #3
+    sta text_y
+    lda tmp2 + 1
+    cmp #$FF
+    bne +
+    rep #$20
+.ACCU 16
+    lda #ATTR_DIM
+    jsr hr_attr
+.ACCU 8
+    jsr hr_dash2
+    bra @ph_steps
++
+    pha
+    rep #$20
+.ACCU 16
+    lda #ATTR_CYAN
+    jsr hr_attr
+.ACCU 8
+    pla
+    jsr hr_x2
+
+@ph_steps:
+    stz tmp0 + 1            ; phrase row 0..15
+@ph_row:
+    lda tmp0 + 1
+    clc
+    adc #5
+    sta text_y
+    lda #HS_PHX
+    sta text_x
+    lda tmp2 + 1            ; phrase id
+    cmp #$FF
+    bne @ph_row_data
+    ; empty phrase: clear 12 columns with blank spaces
+    rep #$20
+.ACCU 16
+    lda #ATTR_DIM
+    jsr hr_attr
+.ACCU 8
+    ldx #str_hr_blank12
+    jsr hr_s
+    jmp @ph_stepnext2
+
+@ph_row_data:
+    ; 1. Row label (2 hex digits in ATTR_DIM)
+    rep #$20
+.ACCU 16
+    lda #ATTR_DIM
+    jsr hr_attr
+.ACCU 8
+    lda tmp0 + 1
+    jsr hr_x2
+    lda #0                  ; space (' ' - 32)
+    jsr hr_put
+
+    ; Fetch 4 bytes of phrase row into str_buf + 32..35
+    lda tmp0 + 1            ; 8-bit row (0..15)
+    rep #$30
+.ACCU 16
+    and #$00FF
+    asl
+    asl                     ; row * 4
+    sta tmp1
+    lda tmp2
+    xba
+    and #$00FF              ; phrase id
+    asl
+    asl
+    asl
+    asl
+    asl
+    asl                     ; phrase * 64
+    clc
+    adc tmp1
+    tax
+    sep #$20
+.ACCU 8
+    lda.l $7E0000 + SB_PHRASES,x
+    sta str_buf + 32
+    lda.l $7E0000 + SB_PHRASES + 1,x
+    sta str_buf + 33
+    lda.l $7E0000 + SB_PHRASES + 2,x
+    sta str_buf + 34
+    lda.l $7E0000 + SB_PHRASES + 3,x
+    sta str_buf + 35
+
+    ; 2. Note (3 chars via draw_note_l)
+    lda str_buf + 32
+    pha
+    rep #$20
+.ACCU 16
+    bne +
+    lda #ATTR_DIM
+    bra ++
++
+    lda #ATTR_TEXT
+++
+    jsr hr_attr
+.ACCU 8
+    pla
+    jsl draw_note_l
+    lda #0                  ; space
+    jsr hr_put
+
+    ; 3. Instrument (2 hex digits or -- in ATTR_DIM)
+    lda str_buf + 33
+    cmp #INSTR_NONE
+    bne +
+    rep #$20
+.ACCU 16
+    lda #ATTR_DIM
+    jsr hr_attr
+.ACCU 8
+    jsr hr_dash2
+    bra ++
++
+    pha
+    rep #$20
+.ACCU 16
+    lda #ATTR_TEXT
+    jsr hr_attr
+.ACCU 8
+    pla
+    jsr hr_x2
+++
+    lda #0                  ; space
+    jsr hr_put
+
+    ; 4. Command letter (A..Z in ATTR_PINK or - in ATTR_DIM)
+    lda str_buf + 34
+    beq +
+    pha
+    rep #$20
+.ACCU 16
+    lda #ATTR_PINK
+    jsr hr_attr
+.ACCU 8
+    pla
+    clc
+    adc #'A' - 32 - 1       ; 1..26 -> A..Z
+    jsr hr_put
+    bra ++
++
+    rep #$20
+.ACCU 16
+    lda #ATTR_DIM
+    jsr hr_attr
+.ACCU 8
+    lda #'-' - 32
+    jsr hr_put
+++
+    lda #0                  ; space
+    jsr hr_put
+
+@ph_stepnext2:
+    inc tmp0 + 1
+    lda tmp0 + 1
+    cmp #16
+    beq +
+    jmp @ph_row
++
     rts
 
-str_hr_song:  .DB "SONG", 0
-str_hr_chain: .DB "CHAIN", 0
-str_hr_ruler: .DB "  PH TSP", 0
+str_hr_song:    .DB "SONG", 0
+str_hr_chain:   .DB "CHAIN", 0
+str_hr_ruler:   .DB "  PH TSP", 0
+str_hr_phrase:  .DB "PHRASE", 0
+str_hr_phruler: .DB "  NOTE IN C ", 0
+str_hr_blank12: .DB "            ", 0
 
 ; --- OPTIONS HI-RES (field 7): B + left/right toggles, persists at $000D ---
 opt_hires_edit:
