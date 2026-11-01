@@ -15,7 +15,7 @@ local frames = 0
 local _booted = false
 local fails = 0
 local pad = {}
-local base_pitch = 0
+local base_pitch = -1
 
 local function wram(addr) return emu.read(addr, emu.memType.snesWorkRam) end
 local function poke(a, v) emu.write(a, v, emu.memType.snesWorkRam) end
@@ -38,6 +38,14 @@ emu.addEventCallback(function()
     return
   end
   frames = frames + 1
+  -- the note's base pitch: voice 0 right after the trigger (KON counted)
+  -- and before table row 2 (TSP +12) has run. Sampled by state, not at a
+  -- fixed frame: how soon after Start the trigger lands depends on how fast
+  -- the main loop is drawing, which is timing, not table behaviour.
+  if base_pitch < 0 and frames > 44 and frames < 58
+      and wram(0x15) > 0 and wram(0x307) <= 2 then
+    base_pitch = dsp(0x02) + dsp(0x03) * 256
+  end
   if frames == 14 then pad = { start = true } end
   if frames == 17 then pad = {} end
 
@@ -85,12 +93,11 @@ emu.addEventCallback(function()
     check(wram(0x2FF) == 0, "trigger started the instrument's table 0")
     check(dsp(0x00) == 0x20 and dsp(0x01) == 0x20,
       "row 0: V20 retargeted the voice level")
-    base_pitch = dsp(0x02) + dsp(0x03) * 256
   elseif frames == 58 then
     check(dsp(0x0C) == 0x30 and dsp(0x1C) == 0x30,
       "row 1: M30 set master volume (the command column)")
     local p = dsp(0x02) + dsp(0x03) * 256
-    check(math.abs(p - base_pitch * 2) <= 2,
+    check(base_pitch > 0 and math.abs(p - base_pitch * 2) <= 2,
       "row 2: TSP +12 doubled the pitch (" .. base_pitch .. " -> " .. p .. ")")
   elseif frames == 70 then
     local r = wram(0x307)

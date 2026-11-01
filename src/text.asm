@@ -19,6 +19,7 @@ text_clear:
     bne @loop
     sep #$20
 .ACCU 8
+    stz.w sd_valid          ; the SONG/LIVE grid must repaint after a clear
     rts
 
 ; Compute shadow byte offset from text_x/text_y -> X.
@@ -47,6 +48,7 @@ text_puts:
     stx tmp0
     jsr text_dest
     txy
+    jsr text_inv            ; tmp1 = glyph-set offset, fixed for the string
     ldx tmp0
 @loop:
     lda.w $0000,x
@@ -60,20 +62,8 @@ text_puts:
     rep #$20
 .ACCU 16
     and #$00FF
-    ; accent draws as a negative (inverted glyph set at +96)
-    pha
-    lda text_attr
-    cmp #ATTR_ACCENT
-    beq @inv
-    cmp #ATTR_PLAY
-    beq @inv
-    pla
-    bra @pl
-@inv:
-    pla
     clc
-    adc #96
-@pl:
+    adc tmp1                ; +96 inverted set for ACCENT/PLAY, else +0
     ora text_attr
     sta.w SHADOW_BG3,y
     sep #$20
@@ -84,6 +74,29 @@ text_puts:
     inc text_x
     bra @loop
 @done:
+    rts
+
+; tmp1 = 96 when text_attr draws as a negative (ACCENT/PLAY use the inverted
+; glyph set at +96), else 0. 16-bit store, like text_dest's use of tmp1.
+; Clobbers A only; returns A8.
+text_inv:
+    rep #$20
+.ACCU 16
+    lda text_attr
+    cmp #ATTR_ACCENT
+    beq @inv
+    cmp #ATTR_PLAY
+    beq @inv
+    stz tmp1
+    sep #$20
+.ACCU 8
+    rts
+@inv:
+.ACCU 16
+    lda #96
+    sta tmp1
+    sep #$20
+.ACCU 8
     rts
 
 ; Print a single glyph. A = raw tile index, position/attr as text_puts.
@@ -117,16 +130,36 @@ text_puttile:
     rts
 
 ; Print A as two uppercase hex digits at text_x/y. Advances text_x by 2.
+; One text_dest + one attribute test for both digits (this is the hottest
+; glyph call: every row label, chain, instrument and value cell). Exit state
+; matches the old two-text_puttile version: X = the second digit's offset.
 text_hex8:
+    pha
+    jsr text_dest           ; X = first digit's offset
+    jsr text_inv            ; tmp1 = 0 / 96
+    pla
     pha
     lsr
     lsr
     lsr
     lsr
-    jsr @digit
+    jsr @word
+    sta.w SHADOW_BG3,x
+    sep #$20
+.ACCU 8
     pla
     and #$0F
-@digit:
+    jsr @word
+    sta.w SHADOW_BG3 + 2,x
+    sep #$20
+.ACCU 8
+    inx
+    inx
+    inc text_x
+    inc text_x
+    rts
+; A8 = nibble -> A16 = finished tilemap word (returns with M clear)
+@word:
     cmp #10
     bcc @num
     adc #6                  ; carry set: +7 total ('A'-'0'-10)
@@ -134,4 +167,11 @@ text_hex8:
     adc #'0'
     sec
     sbc #32                 ; to tile index
-    jmp text_puttile
+    rep #$20
+.ACCU 16
+    and #$00FF
+    clc
+    adc tmp1
+    ora text_attr
+    rts
+.ACCU 8

@@ -65,10 +65,16 @@
 .INDEX 16
 
 main_loop:
+    ; a frame that overran already has its NMI flag set: run it now. A bare
+    ; WAI here would sleep through to the NEXT NMI and turn any overrun,
+    ; however small, into a whole lost frame (30 fps) and a doubled tick.
+    lda frame_flag
+    bne @frame
 @wait:
     wai
     lda frame_flag
     beq @sync_wake
+@frame:
     stz frame_flag
 
     jsr input_update
@@ -91,7 +97,7 @@ main_loop:
     ; A maskable V-timer IRQ woke WAI between frames. Its handler only captured
     ; the counter; drain IN24 ticks here, safely outside interrupt context.
     jsr engine_sync_update
-    bra @wait
+    bra main_loop           ; re-check: the NMI may have landed meanwhile
 
 ; fold the streamed APU tick byte into a free-running 16-bit counter
 tick_track:
@@ -192,6 +198,9 @@ minimap_impl:  .DB 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
 ; ui_mode -> minimap cell index ($FF = no highlight; LIVE is a mode of
 ; SONG so it highlights S)
 minimap_pos:   .DB $FF, 7, 6, 5, 8, 10, 13, 3, 5, 12, 0, 11, 1, 14, 9, 4
+; cell -> screen position (x = 27 + cell%5, y = 5 + cell/5)
+minimap_x:     .DB 27, 28, 29, 30, 31, 27, 28, 29, 30, 31, 27, 28, 29, 30, 31
+minimap_y:     .DB 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7
 
 draw_minimap:
     lda ui_mode
@@ -200,31 +209,17 @@ draw_minimap:
 @go:
     stz ui_cnt              ; cell 0-14
 @cell:
-    ; x = 27 + cell%5, y = 25 + cell/5
+    ; x = 27 + cell%5, y = 5 + cell/5 (tabled: this runs 15x every frame)
     lda ui_cnt
-@mod5:
-    cmp #$05
-    bcc @m_done
-    sec
-    sbc #$05
-    bra @mod5
-@m_done:
-    clc
-    adc #27
+    rep #$30
+.ACCU 16
+    and #$00FF
+    tax
+    sep #$20
+.ACCU 8
+    lda.w minimap_x,x
     sta text_x
-    lda ui_cnt
-    ldy #$0000
-@div5:
-    cmp #$05
-    bcc @d_done
-    sec
-    sbc #$05
-    iny
-    bra @div5
-@d_done:
-    tya
-    clc
-    adc #5
+    lda.w minimap_y,x
     sta text_y
     ; attr: accent if current, text if built, dim otherwise
     lda ui_mode

@@ -304,6 +304,14 @@ clip_width   db      ; rectangular clipboard width
 pal_buf2     ds 8    ; CGRAM colours 16-19 (ATTR_PLAY palette), drained
                      ; with pal_buf by the NMI (moved here from $03FA:
                      ; it overran $0400 = SHADOW_BG3 by 2 bytes)
+sd_valid     db      ; SONG/LIVE grid snapshot holds a drawn frame (0 = force:
+                     ; text_clear zeroes it, so every screen entry redraws)
+sd_changed   db      ; song_draw_changed: some input differed this frame
+sd_cue       db      ; song_draw_changed: a cued launch is pending (flash)
+sd_t         db      ; song_draw_changed: grid track counter
+sd_r         db      ; song_draw_changed: grid row counter
+sd_snap      ds 176  ; last-drawn inputs of song_draw: 7 scalars, 8 x 5 track
+                     ; playhead bytes, the cue flash, 8 x 16 visible cells
 .ENDE
 
 ; Shadow of the BG3 tilemap (32x32 words). NMI DMAs this to VRAM every frame;

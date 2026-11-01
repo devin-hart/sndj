@@ -38,6 +38,12 @@ emu.addEventCallback(function()
     return
   end
   frames = frames + 1
+  -- S0F window: first and last voice-0 pitch while row 14 is the engine row
+  if frames >= 100 and frames < 147 and wram(0x17) == 14 then
+    local p = dsp(0x02) + dsp(0x03) * 256
+    if sweep_a < 0 then sweep_a = p end
+    sweep_b = p
+  end
   if frames == 14 then pad = { start = true } end
   if frames == 17 then pad = {} end
 
@@ -82,11 +88,12 @@ emu.addEventCallback(function()
   elseif frames == 126 then
     check(dsp(0x00) == 0xB0 and dsp(0x01) == 0xB0,
       "same-row U11 inverted both volume phases ($50 -> $B0)")
-  elseif frames == 133 then
-    sweep_a = dsp(0x02) + dsp(0x03) * 256
-  elseif frames == 136 then
-    sweep_b = dsp(0x02) + dsp(0x03) * 256
-    check(sweep_b < sweep_a, "same-row S0F sweeps the pitch down (" ..
+  elseif frames == 147 then
+    -- sampled across the whole of row 14 (see the tracker above), not at
+    -- fixed frames: when the main loop catches ticks up is timing, not
+    -- behaviour, and fixed frames straddled the row-15 retrigger once
+    -- main_loop stopped losing a frame on every overrun
+    check(sweep_a >= 0 and sweep_b < sweep_a, "same-row S0F sweeps the pitch down (" ..
       string.format("%04X -> %04X", sweep_a, sweep_b) .. ")")
   elseif frames == 148 then
     -- row 15: C47 chord (offsets +4/+7 on the next two voices)

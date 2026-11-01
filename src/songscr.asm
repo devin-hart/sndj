@@ -503,7 +503,129 @@ song_playrow:
     sec
     rts
 
+; song_draw: repaint the 16x8 grid only when something it shows changed.
+; The full repaint is ~400 glyphs (over a frame of CPU on its own); most
+; frames change nothing, so comparing its inputs first is far cheaper and
+; needs no dirty flag at every edit site (edits, pastes, LIVE launches, MIDI
+; and Lua pokes are all caught by the comparison).
 song_draw:
+    jsr song_draw_changed
+    bcc +
+    jmp song_draw_full
++
+    rts
+
+; C set when any input of song_draw_full differs from the last drawn frame
+; (and the snapshot is updated). Inputs: window/cursor/block state, the
+; playhead bytes song_head_glyph reads, the cue flash phase, and the 8 x 16
+; visible cells. Uses Y (snapshot index), X, tmp2; A8 X16 in and out.
+song_draw_changed:
+    stz.w sd_changed
+    lda.w sd_valid
+    bne +
+    inc a
+    sta.w sd_valid
+    sta.w sd_changed
++
+    ldy #$0000
+    lda.w song_top
+    jsr sd_put
+    lda.w song_cx
+    jsr sd_put
+    lda.w song_cy
+    jsr sd_put
+    lda.w blk_mode
+    jsr sd_put
+    lda.w blk_start
+    jsr sd_put
+    lda.w blk_col
+    jsr sd_put
+    lda.w eng_playing
+    jsr sd_put
+    ; per-track playhead state (song_head_glyph's inputs)
+    stz.w sd_cue
+    ldx #$0000
+@trk:
+    lda.w trk_pending,x
+    jsr sd_put
+    lda.w trk_pending,x
+    cmp #$FE
+    bcs +
+    lda #$01                ; a cue ($00-$FD) flashes its marker
+    sta.w sd_cue
++
+    lda.w trk_songrow,x
+    jsr sd_put
+    lda.w trk_live_row,x
+    jsr sd_put
+    lda.w trk_pend_row,x
+    jsr sd_put
+    lda.w trk_phrase,x
+    cmp #$FF                ; C = halted (only that matters to the marker)
+    lda #$00
+    rol a
+    jsr sd_put
+    inx
+    cpx #TRACKS
+    bne @trk
+    ; the cue flash phase, only while something is cued
+    lda.w sd_cue
+    beq +
+    lda.w frame_cnt
+    and #$10
++
+    jsr sd_put
+    ; the visible window of the grid
+    stz.w sd_t
+@gtrk:
+    rep #$30
+.ACCU 16
+    lda.w sd_t
+    and #$00FF
+    xba
+    lsr                     ; track * 128
+    sta tmp2
+    lda.w song_top
+    and #$00FF
+    clc
+    adc tmp2
+    tax
+    sep #$20
+.ACCU 8
+    lda #16
+    sta.w sd_r
+@grow:
+    lda.l $7E0000 + SB_SONG,x
+    cmp.w sd_snap,y
+    beq +
+    sta.w sd_snap,y
+    lda #$01
+    sta.w sd_changed
++
+    inx
+    iny
+    dec.w sd_r
+    bne @grow
+    inc.w sd_t
+    lda.w sd_t
+    cmp #TRACKS
+    bne @gtrk
+    lda.w sd_changed
+    cmp #$01                ; C = changed
+    rts
+
+; snapshot byte Y vs A: store and flag on a difference; Y++
+sd_put:
+    cmp.w sd_snap,y
+    beq +
+    sta.w sd_snap,y
+    lda #$01
+    sta.w sd_changed
++
+    iny
+    rts
+
+song_draw_full:
     stz tmp0 + 1            ; visible row counter
 @rows:
     lda tmp0 + 1
