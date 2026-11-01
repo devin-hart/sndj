@@ -1,6 +1,7 @@
 -- statusbar.lua — verify G1 hi-res status bar on SONG and FRAME
 
 local W = emu.memType.snesWorkRam
+local S = emu.memType.snesSaveRam
 local function wram(a) return emu.read(a, W) end
 local function poke(a, v) emu.write(a, v, W) end
 
@@ -13,8 +14,17 @@ end
 
 emu.addEventCallback(function() emu.setInput(pad, 0) end, emu.eventType.inputPolled)
 
+-- Save original SRAM $000D so we can restore it on exit
+local orig_sram = emu.read(0x000D, S)
 -- Start with HI-RES OFF in SRAM
-emu.write(0x000D, 0, emu.memType.snesSaveRam)
+emu.write(0x000D, 0, S)
+
+local function finish(code)
+  if orig_sram ~= nil then
+    emu.write(0x000D, orig_sram, S)
+  end
+  emu.stop(code)
+end
 
 local function word(a) return emu.read(a, W) + emu.read(a + 1, W) * 256 end
 
@@ -80,19 +90,19 @@ local plan = {
     check(title == "SONG", "SONG title: '" .. title .. "'")
     local name = hr_str(6, 1, 8)
     check(name == "SONG    ", "SONG status bar name: '" .. name .. "'")
-    local bpm = hr_str(15, 1, 3)
-    check(bpm == "150", "SONG status bar tempo: '" .. bpm .. "'")
-    local play = hr_str(19, 1, 4)
+    local bpm = hr_str(15, 1, 4)
+    check(bpm == "T150", "SONG status bar tempo: '" .. bpm .. "'")
+    local play = hr_str(20, 1, 4)
     check(play == "STOP", "SONG status bar state stopped: '" .. play .. "'")
-    local ram_lbl = hr_str(24, 1, 4)
+    local ram_lbl = hr_str(25, 1, 4)
     check(ram_lbl == "RAM ", "SONG status bar RAM label: '" .. ram_lbl .. "'")
 
     local res_cur = word(0x00D7)
     local used_str = compute_fl_kb(res_cur - 0x1200)
-    local used_act = hr_str(28, 1, 5)
+    local used_act = hr_str(29, 1, 5)
     check(used_act == used_str, "SONG ARAM used: '" .. used_act .. "' == '" .. used_str .. "'")
 
-    local free_lbl = hr_str(33, 1, 6)
+    local free_lbl = hr_str(34, 1, 6)
     check(free_lbl == " FREE ", "SONG status bar FREE label: '" .. free_lbl .. "'")
 
     local edl = emu.read(0x3600 + 17, W) & 0x0F
@@ -101,7 +111,7 @@ local plan = {
     local floor_addr = floor_page * 256
     local free_bytes = (floor_addr > res_cur) and (floor_addr - res_cur) or 0
     local free_str = compute_fl_kb(free_bytes)
-    local free_act = hr_str(39, 1, 5)
+    local free_act = hr_str(40, 1, 5)
     check(free_act == free_str, "SONG ARAM free: '" .. free_act .. "' == '" .. free_str .. "'")
   end},
 
@@ -109,7 +119,7 @@ local plan = {
   {48, function() pad = { start = true } end},
   {50, function() pad = {} end},
   {55, function()
-    local play = hr_str(19, 1, 4)
+    local play = hr_str(20, 1, 4)
     check(play == "PLAY", "SONG status bar state playing: '" .. play .. "'")
   end},
 
@@ -143,19 +153,19 @@ local plan = {
 
     local name = hr_str(21, 1, 8)
     check(name == "SONG    ", "FRAME status bar name: '" .. name .. "'")
-    local bpm = hr_str(30, 1, 3)
-    check(bpm == "150", "FRAME status bar tempo: '" .. bpm .. "'")
-    local play = hr_str(34, 1, 4)
+    local bpm = hr_str(30, 1, 4)
+    check(bpm == "T150", "FRAME status bar tempo: '" .. bpm .. "'")
+    local play = hr_str(35, 1, 4)
     check(play == "STOP", "FRAME status bar state stopped: '" .. play .. "'")
-    local ram_lbl = hr_str(39, 1, 4)
+    local ram_lbl = hr_str(40, 1, 4)
     check(ram_lbl == "RAM ", "FRAME status bar RAM label: '" .. ram_lbl .. "'")
 
     local res_cur = word(0x00D7)
     local used_str = compute_fl_kb(res_cur - 0x1200)
-    local used_act = hr_str(43, 1, 5)
+    local used_act = hr_str(44, 1, 5)
     check(used_act == used_str, "FRAME ARAM used: '" .. used_act .. "' == '" .. used_str .. "'")
 
-    local f_lbl = hr_str(48, 1, 3)
+    local f_lbl = hr_str(49, 1, 3)
     check(f_lbl == " F ", "FRAME status bar F label: '" .. f_lbl .. "'")
 
     local edl = emu.read(0x3600 + 17, W) & 0x0F
@@ -164,15 +174,15 @@ local plan = {
     local floor_addr = floor_page * 256
     local free_bytes = (floor_addr > res_cur) and (floor_addr - res_cur) or 0
     local free_str = compute_fl_kb(free_bytes)
-    local free_act = hr_str(51, 1, 5)
+    local free_act = hr_str(52, 1, 5)
     check(free_act == free_str, "FRAME ARAM free: '" .. free_act .. "' == '" .. free_str .. "'")
 
-    -- Check 3-column margin before tick counter at column 59
-    local margin = hr_str(56, 1, 3)
-    check(margin == "   ", "FRAME 3-column margin before tick counter: '" .. margin .. "'")
+    -- Check 2-column margin before tick counter at column 59
+    local margin = hr_str(57, 1, 2)
+    check(margin == "  ", "FRAME 2-column margin before tick counter: '" .. margin .. "'")
 
     print(fails == 0 and "ALL PASS statusbar.lua" or ("FAILED statusbar.lua: " .. fails))
-    emu.stop(fails)
+    finish(fails)
   end},
 }
 

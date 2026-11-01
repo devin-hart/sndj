@@ -721,13 +721,14 @@ opt_hires_edit:
     rtl
 
 ; --- hi-res status bar (SONG and FRAME, row 1) -------------------------------
-; Shows: song name (8 chars), tempo (decimal 3 digits, 0->150),
+; Shows: song name (8 chars), tempo (T + decimal 3 digits, 0->150),
 ; transport state (PLAY in ATTR_PLAY, WAIT in ATTR_ACCENT, STOP in ATTR_DIM),
 ; and ARAM used / free (matching echoscr.asm: used = res_cursor - $1200,
 ; free = echo floor - res_cursor).
 ; SONG: starts at x=6, FRAME: starts at x=21.
 ; Free space x59-63 preserved for tick counter / chrome.
 ; Redraws only when one of the displayed values or ui_mode changes.
+; Note: clobbers tmp0/tmp2 (safe: main loop chrome does not rely on them).
 hr_status_bar:
     lda ui_mode
     cmp #SCREEN_SONG
@@ -844,7 +845,19 @@ hr_status_bar:
     lda #0
     jsr hr_put
 
-    ; 2. Tempo (3 digits, ATTR_TEXT)
+    ; 2. Tempo (T in ATTR_DIM, 3 digits in ATTR_TEXT)
+    rep #$20
+.ACCU 16
+    lda #ATTR_DIM
+    jsr hr_attr
+.ACCU 8
+    lda #'T' - 32
+    jsr hr_put
+    rep #$20
+.ACCU 16
+    lda #ATTR_TEXT
+    jsr hr_attr
+.ACCU 8
     lda.l $7E0000 + SB_HEADER + SH_BPM
     bne +
     lda #150
@@ -1002,7 +1015,7 @@ hr_fl_kb:
     lsr
     lsr
     lsr
-    lsr                     ; whole KB (0-31)
+    lsr                     ; whole KB (0-63)
     sta tmp0
     sep #$20
 .ACCU 8
