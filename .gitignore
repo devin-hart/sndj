@@ -20,3 +20,11 @@ soundfonts/**
 factory/*.sndjfact
 !factory/factory.sndjfact
 __pycache__/
+
+# Local working notes (Claude/Gemini review channels, wiki) and agent
+# outputs: kept on disk, never committed.
+CLAUDE-REPORT.md
+GEMINI-REPORT.md
+REPORT.md
+wiki/
+Claude outputs/
