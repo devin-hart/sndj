@@ -320,10 +320,23 @@ res_keep     db      ; residency pass keeps resident data (refresh mode)
 res_over     db      ; a refresh pass ran out of room (stale data in the way)
 res_frag     db      ; ARAM may hold unreferenced data since the last full
                      ; build (ECHO compacts first so its budget is exact)
+ui_hires     db      ; $80 = the text layer is the Mode 5 64-column one
+                     ; (hires.asm); text_clear drops back to Mode 1
+ui_xoff      db      ; status/minimap x shift: 32 in hi-res (right edge)
+hr_paldirty  db      ; the NMI uploads the hi-res CGRAM image
+hr_tab       ds 32   ; hi-res: per palette, even/odd tilemap-word bases
+                     ; (copied from hr_tab_rom; indexed palette*4)
+hr_row       dw      ; hi-res SONG: entry offset of the row's first marker
+hr_e         dw      ; hi-res SONG: entry offset of the cell being drawn
+hr_lastch    db      ; hi-res SONG: chain id the panel shows ($FE = none yet)
 .ENDE
 
 ; Shadow of the BG3 tilemap (32x32 words). NMI DMAs this to VRAM every frame;
 ; the editor writes only here — it never touches PPU ports (invariant #6).
 .DEFINE SHADOW_BG3 $0400     ; ..$0BFF (2 KB)
+; hi-res odd-column layer (rows 0-27 only, 1792 bytes, same stride);
+; the even layer reuses SHADOW_BG3. Ends $14FF, well above the overflow
+; block and below the stack.
+.DEFINE SHADOW_HRB $0E00
 
 ; Stack: S initialised to $1FFF, grows down.

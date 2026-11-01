@@ -260,6 +260,7 @@ init_video:
     sta BG34NBA
     lda #$04                ; BG3 only for now
     sta TM
+    jsl hr_boot             ; hi-res fonts + BG1/BG2 bases (Mode 5 SONG)
 
     rts
 

@@ -29,9 +29,24 @@ local function check(cond, msg)
   end
 end
 
+-- classic tilemap word at text cell (x, y). On a hi-res screen (ui_hires
+-- $0D66, ui_xoff $0D67: hires.asm) the chrome sits ui_xoff columns right
+-- and each column is one of two layers; decode back to the classic
+-- encoding (glyph | attr) so the expectations stay layout-free.
 local function cell(x, y)
-  return emu.read(0x0400 + (y * 32 + x) * 2, emu.memType.snesWorkRam)
-      + emu.read(0x0400 + (y * 32 + x) * 2 + 1, emu.memType.snesWorkRam) * 256
+  local W = emu.memType.snesWorkRam
+  local function word(a) return emu.read(a, W) + emu.read(a + 1, W) * 256 end
+  if (emu.read(0x0D66, W) & 0x80) == 0 then return word(0x0400 + (y * 32 + x) * 2) end
+  x = x + emu.read(0x0D67, W)
+  local off = y * 64 + (x >> 1) * 2
+  if x % 2 == 0 then
+    local w = word(0x0400 + off)
+    return ((w & 0x3FF) - 1) // 2 | (w & 0xFC00)
+  end
+  local w = word(0x0E00 + off)
+  local pal = (w >> 10) & 7
+  if pal == 1 then pal = 4 elseif pal == 4 then pal = 1 end
+  return (w & 0x3FF) // 2 | (w & 0xE000) | (pal << 10)
 end
 
 local function onFrame()

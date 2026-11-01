@@ -7,6 +7,13 @@
 
 ; Fill the whole shadow map with spaces (palette 0, priority).
 text_clear:
+    lda ui_hires
+    beq +
+    stz ui_hires            ; back to Mode 1: the NMI restores the classic
+    stz ui_xoff             ; palette image
+    lda #$01
+    sta pal_dirty
++
     rep #$30
 .ACCU 16
     lda #ATTR_TEXT          ; tile 0 = space
@@ -45,6 +52,11 @@ text_dest:
 ; Print NUL-terminated string. X = string address (in DB), text_x/y = position,
 ; text_attr = tilemap attribute bits. Advances text_x by the string length.
 text_puts:
+    bit ui_hires
+    bpl +
+    jsl hr_puts
+    rts
++
     stx tmp0
     jsr text_dest
     txy
@@ -102,6 +114,11 @@ text_inv:
 ; Print a single glyph. A = raw tile index, position/attr as text_puts.
 ; Advances text_x.
 text_puttile:
+    bit ui_hires
+    bpl +
+    jsl hr_puttile
+    rts
++
     pha
     jsr text_dest
     pla
@@ -134,6 +151,11 @@ text_puttile:
 ; glyph call: every row label, chain, instrument and value cell). Exit state
 ; matches the old two-text_puttile version: X = the second digit's offset.
 text_hex8:
+    bit ui_hires
+    bpl +
+    jsl hr_hex8
+    rts
++
     pha
     jsr text_dest           ; X = first digit's offset
     jsr text_inv            ; tmp1 = 0 / 96
@@ -175,3 +197,11 @@ text_hex8:
     ora text_attr
     rts
 .ACCU 8
+
+; long-callable entries for the bank-7 hi-res screen code
+song_head_glyph_l:
+    jsr song_head_glyph
+    rtl
+song_cell_attr_l:
+    jsr song_cell_attr
+    rtl

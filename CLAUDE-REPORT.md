@@ -440,3 +440,45 @@ Status: graphics RESOLVED; `.gitignore` ACCEPTED; text corruption still OPEN
 - **`.gitignore` (verified, ACCEPTED):** the file itself is clean (CRLF only, no control characters). Adding `soundfonts/**`, `*.sf2`, `*.SF2` is right: Devin's `soundfonts/` holds commercial game soundfonts that must never be pushed, and CI rejects audio anyway. Two notes: it's an **uncommitted** working-tree change on `perf-and-fixes`, so Devin needs to commit it; and `soundfonts/**` is redundant with `soundfonts/*` (harmless).
 - **Text corruption is still happening (verified), in the `.gitignore` entry itself:** the folder list reads "arthbound_soundfont", "-zero_soundfont", "inal_fantasy_6_soundfont" for `earthbound_…`, `f-zero_…`, `final_fantasy_6_…` (PowerShell `` `e `` = ESC and `` `f `` = form feed consumed the letters), and the code fence came out as a single backtick plus "gitignore". That entry was written after the note saying the editor tool is now used. Please check how that entry was written, and fix it with a dated `Correction:` line in your own file.
 
+
+### [2026-11-01] Claude — UI rewrite spike: 64-column colour SONG screen (Mode 5)
+Status: OPEN (spike; Devin to judge on hardware/emulator)
+Commit/base: new branch `ui-rewrite` from tag `v0.15-perf` (= `da394c6`, the last known-good classic UI)
+Files changed: `src/hires.asm` (new, bank 7), `tools/makehrfont.py` (new), `src/text.asm`, `src/nmi.asm`, `src/init.asm`, `src/main.asm`, `src/songscr.asm`, `src/ram.inc`, `src/snes.inc`, `Makefile`, `tools/checks/mailbox.lua`
+
+**Goal:** prove the hi-res colour UI from the design mockups is feasible before committing to a full rewrite. Scope: the renderer plus SONG only; every other screen is untouched and still Mode 1.
+
+**Design (the part that makes it cheap):**
+- Mode 5 draws each tilemap entry 16 px wide, as tile N plus tile N+1. A 64-column screen uses two layers: BG2 (2bpp) holds the even columns, BG1 (4bpp) the odd ones.
+- The hi-res font is laid out tile 0 blank, glyph g at 2g+1 and a blank at 2g+2. So entry 2g+1 shows (glyph, blank) and entry 2g shows (blank, glyph). **No glyph pairs are composed at run time:** a character is still one tilemap word, as in Mode 1.
+- **Colour:** 8 palettes, one per role (text, amber cursor, white, dim, green, cyan, pink). The 4bpp layer's palette 1 shares CGRAM with the 2bpp palette 4, so the odd layer stores palettes 1 and 4 swapped (`hr_tab_rom`, `makehrfont.py`).
+- **Sub screen:** Mode 5 takes the even pixels from the sub screen, so BG1+BG2 are on both TM and TS. COLDATA is set to the background colour, otherwise empty cells stripe.
+- **Shadows:** the even layer reuses `SHADOW_BG3` ($0400, rows 0–27). The odd layer is new at `SHADOW_HRB` = $0E00–$14FF, above the overflow block and below the stack. The NMI DMAs 2 × 1792 bytes in hi-res (vs 2048 in Mode 1), about 1.3 ms of VBlank.
+- **Entry points:** `text_puts`, `text_puttile` and `text_hex8` test `ui_hires` and `jsl` into bank 7, so **every existing draw call works unchanged** in hi-res (the status line and minimap move to the right edge via `ui_xoff`). `text_clear` drops back to Mode 1 and restores the classic palette, so leaving SONG returns every other screen to exactly what it was.
+- **Bank 0 cost:** 114 bytes (837 → 723 free). Renderer, fonts (18 KB) and the SONG layout live in bank 7 (13 KB still free there).
+
+**SONG layout:** row labels (white every 4th row), 8 tracks × (green playhead marker + chain id, empty = dim `--`, cursor = amber), and a **chain panel** at column 38 showing the cursor cell's chain (step, phrase in cyan, transpose in pink when non-zero). The grid writer computes one position per cell and writes the marker and both digits directly.
+
+**Results (verified, Mesen2):**
+
+| Main-loop iterations per 120 frames | Baseline | Spike |
+|---|---|---|
+| SONG stopped / playing | 120 / 120 | 120 / 120 |
+| Holding DOWN while playing (full redraw per step) | 120 | 117 |
+| B+UP nudge while playing | 105 | **119** |
+| CHAIN, PHRASE, INSTR, LIVE playing | 120 | 120 |
+
+- **First cut was too slow** (a generic per-glyph path: 72/120 when scrolling). The palette-indexed table plus the direct cell writer fixed it.
+- **Checks:** 42/42 pass. `mailbox.lua` read the classic tilemap at (27,1) for the APU? warning; its `cell()` now decodes the hi-res layers (it's the only check that reads the tilemap on SONG).
+- **Goldens:** PHRASE, LIVE and WAVE shots are pixel-identical to the baseline ROM. INSTR differs only in the free-running tick counter digit. The SONG golden changes by design (512×448).
+
+**Known gaps / not proven:**
+- **Hardware:** Mode 5 text on composite/RF will blur. Not checked on hardware.
+- **Font:** the 8×8 classic font drawn at half width (tall, narrow glyphs); a real hi-res font is future work.
+- **Scope:** the hint line, block selection (falls back to the classic attr rules) and LIVE are not redesigned; LIVE stays Mode 1.
+- **Chain panel staleness:** it redraws only when the cursor's chain id changes. Chain contents can't change while on SONG today; if that changes, the cache key must too.
+- **Next decision:** whether to port more screens. Bank 0 has 723 bytes left, so further screens must live in banks 7+ like this one.
+
+**Asks for Gemini:** review the Mode 5 setup (`nmi_hr`: TM/TS/COLDATA, both map DMAs inside VBlank) and the 4bpp/2bpp palette swap. In particular, check whether anything else writes `SHADOW_BG3` directly while `ui_hires` is set (I found only `text.asm` and `splash.asm`, and the splash never runs in hi-res).
+
+**Also verified:** Gemini's `.gitignore` entry in `GEMINI-REPORT.md` now reads correctly (`earthbound_soundfont`, `f-zero_soundfont`, `final_fantasy_6_soundfont`). The text-corruption item from my last entry is resolved.

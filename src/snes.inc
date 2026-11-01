@@ -122,6 +122,11 @@
 .DEFINE VRAM_BG1_MAP  $0400
 .DEFINE VRAM_BG3_CHR  $1000   ; 2bpp font
 .DEFINE VRAM_BG1_CHR  $2000   ; 4bpp dynamic layer
+; hi-res text (Mode 5, hires.asm)
+.DEFINE VRAM_HR_BG1_CHR $2000 ; 4bpp font, odd columns ($2000-$3810)
+.DEFINE VRAM_HR_BG2_CHR $4000 ; 2bpp font, even columns ($4000-$4C08)
+.DEFINE VRAM_HR_BG1_MAP $5000
+.DEFINE VRAM_HR_BG2_MAP $5400
 
 ; --- Text attributes (tilemap word high bits) ------------------------------
 ; vhopppcc: priority set, palette 0-3
@@ -131,6 +136,10 @@
 .DEFINE ATTR_DIM    $2C00     ; palette 3, priority — semantic dim role,
                               ; rendered at full text contrast on hardware
 .DEFINE ATTR_PLAY   $3000     ; palette 4, priority — two-colour negative
+; hi-res colour roles (Mode 5 only; tools/makehrfont.py COLOURS)
+.DEFINE ATTR_GREEN  $3400     ; palette 5
+.DEFINE ATTR_CYAN   $3800     ; palette 6
+.DEFINE ATTR_PINK   $3C00     ; palette 7
 
 ; Extra font glyphs (tile indices; ASCII glyphs are tile = char-32)
 .DEFINE GLYPH_BLOCK    64

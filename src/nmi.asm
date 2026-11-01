@@ -25,6 +25,18 @@ Vec_NMI:
 
     lda RDNMI               ; acknowledge
 
+    ; hi-res text layer (hires.asm): its own maps, mode and palette
+    lda ui_hires
+    beq @classic
+    jsl nmi_hr
+    bra @no_pal
+@classic:
+    lda #$09                ; Mode 1, BG3 priority (re-asserted: SONG
+    sta BGMODE              ; may have switched to Mode 5)
+    lda #$04
+    sta TM
+    stz TS
+
     ; --- BG3 shadow tilemap -> VRAM (2 KB, ~0.8 ms of ~2.4 ms VBlank) ---
     lda #$80
     sta VMAIN

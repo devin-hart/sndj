@@ -127,6 +127,8 @@ draw_status:
 @go:
     ; y1: 4-hex tick counter, or APU? on a mailbox fault
     lda #27
+    clc
+    adc ui_xoff             ; hi-res: the right edge is column 59
     sta text_x
     lda #1
     sta text_y
@@ -155,6 +157,8 @@ draw_status:
 @transport:
     ; y3: PLAY / STOP (sync state joins this line with M12)
     lda #27
+    clc
+    adc ui_xoff
     sta text_x
     lda #3
     sta text_y
@@ -218,6 +222,8 @@ draw_minimap:
     sep #$20
 .ACCU 8
     lda.w minimap_x,x
+    clc
+    adc ui_xoff
     sta text_x
     lda.w minimap_y,x
     sta text_y
@@ -381,6 +387,9 @@ fir_presets:
 driver_blob:
     .INCBIN "driver.spc700.bin"
 driver_blob_end:
+
+; the Mode 5 text renderer + hi-res SONG (UI rewrite spike), bank 7
+.INCLUDE "hires.asm"
 
 .BANK 0 SLOT 0
 ; --- internal header (hand-rolled; checksum fixed by tools/fixsum.py) --------
