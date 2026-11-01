@@ -213,8 +213,10 @@ song_update:
     lda frame_cnt
     sec
     sbc tap_timer
-    cmp #25                 ; double-tap = 24 frames (~400 ms), genmddj's feel
+    cmp.w opt_tapwin        ; double-tap window (OPTIONS: TAP WIN)
+    beq +
     bcs @single
++
     stz tap_live            ; the pair is consumed
     jsr song_dtap           ; paste / mint / clone
     bra @draw

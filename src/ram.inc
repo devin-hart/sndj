@@ -283,11 +283,11 @@ sync_irq_delta db    ; IRQ-private captured delta (never shared with main scratc
 up_patch     dw      ; bulk upload: byte offset to OR $02 into on the fly
                      ; (the END block's LOOP bit; $FFFF = none)
 hb_lfc       db      ; heartbeat: frame_cnt at the last beat (delta gate)
-pal_buf2     ds 8    ; CGRAM colours 16-19 (ATTR_PLAY palette), drained
-                     ; with pal_buf by the NMI
-; !! this ENUM ends exactly at $0400 = SHADOW_BG3. It is FULL: new
-; variables go in the $0C00 block below (the tilemap shadow silently
-; shreds anything placed past this point — it cost a debugging hour)
+; !! this ENUM ends at $03FA, 6 bytes below $0400 = SHADOW_BG3. It is
+; FULL: new variables go in the $0C00 block below (the tilemap shadow
+; silently shreds anything placed past $03FF — it cost a debugging hour,
+; and pal_buf2 used to sit at $03FA-$0401, sharing its last colour with
+; the top-left tilemap cell, until it moved to the overflow block)
 .ENDE
 
 ; overflow block: above the BG3 shadow ($0400-$0BFF), below the stack
@@ -301,6 +301,9 @@ trk_arp      ds 8    ; latched A-command intervals (xy; 0 = off)
 trk_trm_cmd  ds 8    ; latched W override ($FF = use instrument TRM)
 blk_col      db      ; rectangular block anchor column
 clip_width   db      ; rectangular clipboard width
+pal_buf2     ds 8    ; CGRAM colours 16-19 (ATTR_PLAY palette), drained
+                     ; with pal_buf by the NMI (moved here from $03FA:
+                     ; it overran $0400 = SHADOW_BG3 by 2 bytes)
 .ENDE
 
 ; Shadow of the BG3 tilemap (32x32 words). NMI DMAs this to VRAM every frame;
