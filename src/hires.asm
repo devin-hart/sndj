@@ -61,6 +61,19 @@ hr_boot:
     sta BG2SC
     lda #((VRAM_HR_BG2_CHR >> 12) << 4) | (VRAM_HR_BG1_CHR >> 12)
     sta BG12NBA
+    ; OPTIONS HI-RES from the SRAM header (anything but 1 = off)
+    stz opt_hires
+    lda.l $700000
+    cmp #'S'
+    bne @done
+    lda.l $700004
+    cmp #'1'
+    bne @done
+    lda.l $70000D
+    cmp #$01
+    bne @done
+    sta opt_hires
+@done:
     rtl
 
 ; --- NMI: both shadows -> VRAM, Mode 5 on main + sub screen ------------------
@@ -683,6 +696,45 @@ song_hr_draw:
 str_hr_song:  .DB "SONG", 0
 str_hr_chain: .DB "CHAIN", 0
 str_hr_ruler: .DB "  PH TSP", 0
+
+; --- OPTIONS HI-RES (field 7): B + left/right toggles, persists at $000D ---
+opt_hires_edit:
+    rep #$20
+.ACCU 16
+    lda pad_event
+    and #(PAD_LEFT | PAD_RIGHT)
+    sep #$20
+.ACCU 8
+    beq @done
+    lda #$01
+    sta b_used
+    lda opt_hires
+    eor #$01
+    sta opt_hires
+    lda.l $700000
+    cmp #'S'
+    bne @done
+    lda opt_hires
+    sta.l $70000D
+@done:
+    rtl
+
+; value cell: text_x/y/attr already set by options_draw (classic screen)
+opt_hires_draw:
+    ldx #str_o_on
+    lda opt_hires
+    bne +
+    ldx #str_o_off
++
+    phb
+    phk
+    plb
+    jsl text_puts_l
+    plb
+    rtl
+
+str_o_on:  .DB "ON ", 0
+str_o_off: .DB "OFF", 0
 
 ; per palette p: even-layer base, odd-layer base (word + 2g = the entry).
 ; Priority set; ACCENT (1) and PLAY (4) use the inverted glyphs (+192

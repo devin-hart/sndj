@@ -26,6 +26,7 @@
 .DEFINE SCREEN_FIR    13
 .DEFINE SCREEN_TABLE  14
 .DEFINE SCREEN_HELP   15
+.DEFINE SCREEN_FRAME  16   ; framescr.asm (bank 7): all tracks' phrases
 
 ; called every frame from the main loop
 screen_update:
@@ -81,7 +82,12 @@ screen_update:
     beq @table
     cmp #SCREEN_HELP
     beq @help
+    cmp #SCREEN_FRAME
+    beq @frame
     jmp song_update
+@frame:
+    jsl frame_update
+    rts
 @phrase:
     jmp phrase_update
 @files:
@@ -120,6 +126,10 @@ nav_mode:
     cmp #SCREEN_LIVE
     bne +
     lda #SCREEN_SONG
++
+    cmp #SCREEN_FRAME       ; FRAME navigates as PHRASE (its cursor cell)
+    bne +
+    lda #SCREEN_PHRASE
 +
     rts
 

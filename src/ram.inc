@@ -328,6 +328,23 @@ hr_tab       ds 32   ; hi-res: per palette, even/odd tilemap-word bases
                      ; (copied from hr_tab_rom; indexed palette*4)
 hr_row       dw      ; hi-res SONG: entry offset of the row's first marker
 hr_e         dw      ; hi-res SONG: entry offset of the cell being drawn
+opt_hires    db      ; OPTIONS HI-RES: 1 = 64-column colour screens (SRAM $000D)
+fr_row       db      ; FRAME: song row
+fr_step      db      ; FRAME: chain step 0-15
+fr_trk       db      ; FRAME: cursor track
+fr_oldtrk    db      ; FRAME: cursor track before this frame's move
+fr_left      db      ; FRAME: first visible track
+fr_w         db      ; FRAME: columns per track (7 hi-res, 8 classic)
+fr_vis       db      ; FRAME: visible tracks (8 hi-res, 3 classic)
+fr_full      db      ; FRAME: full redraw pending
+fr_input     dw      ; FRAME: pad_pressed | pad_event this frame
+fr_head      db      ; FRAME: row the playhead arrow is drawn at ($FF none)
+fr_t         db      ; FRAME draw: track
+fr_r         db      ; FRAME draw: row
+fr_x         db      ; FRAME draw: column x
+fr_cnt       db      ; FRAME draw: loop counter
+fr_cnt2      db      ; FRAME draw: inner loop counter
+fr_ph        ds 8    ; FRAME: each track's phrase at this position ($FF none)
 hr_lastch    db      ; hi-res SONG: chain id the panel shows ($FE = none yet)
 .ENDE
 

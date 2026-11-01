@@ -205,3 +205,30 @@ song_head_glyph_l:
 song_cell_attr_l:
     jsr song_cell_attr
     rtl
+text_puts_l:
+    jsr text_puts
+    rtl
+text_puttile_l:
+    jsr text_puttile
+    rtl
+text_hex8_l:
+    jsr text_hex8
+    rtl
+text_clear_l:
+    jsr text_clear
+    rtl
+draw_note_l:
+    jsr draw_note
+    rtl
+cell_attr_l:
+    jsr cell_attr
+    rtl
+phrase_update_l:
+    jsr phrase_update
+    rtl
+phrase_init_l:
+    jsr phrase_init
+    rtl
+engine_toggle_l:
+    jsr engine_toggle
+    rtl

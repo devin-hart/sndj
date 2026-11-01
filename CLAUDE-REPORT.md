@@ -482,3 +482,113 @@ Files changed: `src/hires.asm` (new, bank 7), `tools/makehrfont.py` (new), `src/
 **Asks for Gemini:** review the Mode 5 setup (`nmi_hr`: TM/TS/COLDATA, both map DMAs inside VBlank) and the 4bpp/2bpp palette swap. In particular, check whether anything else writes `SHADOW_BG3` directly while `ui_hires` is set (I found only `text.asm` and `splash.asm`, and the splash never runs in hi-res).
 
 **Also verified:** Gemini's `.gitignore` entry in `GEMINI-REPORT.md` now reads correctly (`earthbound_soundfont`, `f-zero_soundfont`, `final_fantasy_6_soundfont`). The text-corruption item from my last entry is resolved.
+
+### [2026-11-01] Claude — FRAME editor (all tracks side by side) + OPTIONS HI-RES toggle
+Status: OPEN (Devin to try; Gemini to review)
+Commit/base: branch `ui-rewrite`, on top of `fbdc094`
+Files changed: `src/framescr.asm` (new, bank 7), `src/hires.asm`, `src/phrase.asm`, `src/screens.asm`, `src/songscr.asm`, `src/optionscr.asm`, `src/text.asm`, `src/main.asm`, `src/ram.inc`, `tools/checks/frame.lua` (new), `wiki/log.md`
+
+**What it is:** Devin's request for FamiTracker-style editing across channels, for writing chords. FRAME shows, for one song row and chain step, the phrase each track's chain holds there, side by side.
+
+**Using it:**
+- **Open/close:** X on PHRASE opens FRAME at that phrase, and X on FRAME returns to PHRASE on the cursor track's phrase.
+- **Moving:** the d-pad walks across columns and tracks, and up/down runs off a phrase into the previous/next chain step (and song row). Y+UP/DOWN moves a whole step.
+- **Unchanged:** A+d-pad navigates as if on PHRASE. All PHRASE gestures work: B insert/nudge/cut/copy, Y+B block, double-tap paste, Start, A+B.
+
+**How:**
+- **Editing:** reuses the PHRASE editor. Each frame, `ed_phrase`/`cur_y`/`ed_col` point at the cursor track's cell and `phrase_update` runs. `phrase_draw` returns early on `SCREEN_FRAME`, and FRAME takes the d-pad first unless B is held (nudge) or a block is active.
+- **Context:** `song_cx/song_cy/chain_cy/ed_chain` follow the cursor, so leaving FRAME lands on the cursor cell.
+- **Redraw:** full redraw only when the position, scroll or any track's phrase id changes. Otherwise only the cursor column (and the previous one, and any column showing the same phrase) redraws on input; the playhead arrow redraws when its row changes.
+- **Inspector line:** the cursor cell in full, including the instrument's **sample name from the pool** (SMP/SLICE types). This answers Devin's earlier "where do instrument names come from".
+
+**Layouts:**
+- **HI-RES ON:** all 8 tracks, 7 columns each (note, instrument, command letter; the value shows in the inspector), colour.
+- **HI-RES OFF (classic, 2-colour):** 3 tracks, 8 columns each, side-scrolling to follow the cursor, with `<`/`>` hints.
+
+**OPTIONS HI-RES:** field 7, B+left/right, persisted at SRAM `$000D` (anything but 1 = off, so **default off**: Snes9x blends hi-res by default). SONG uses hi-res only when it's on.
+
+**Results (verified, Mesen2):**
+
+| Main-loop iterations per 120 frames, playing | HI-RES | Classic |
+|---|---|---|
+| Hold RIGHT (column redraws) | 120 | 117 |
+| Hold DOWN (crosses steps: full redraws) | 114 | 119 |
+| B+UP nudge | 120 | 120 |
+| Idle | 120 | 120 |
+
+- **Checks:** `make check` **43/43** (new `frame.lua`) with HI-RES off, and again with HI-RES persisted on.
+- **`frame.lua`:** X opens FRAME, the cursor walks to track 2, a B tap writes track 2's phrase, DOWN crosses into step 1, Y+UP pages back, and X returns to PHRASE on phrase 11.
+- **Bank 0:** 608 bytes free (−115).
+
+**Known gaps:**
+- **No new phrase from an empty slot:** a track with no phrase at this step can't be edited from FRAME; the B tap is a no-op. Minting one needs the CHAIN screen.
+- **Kit rows:** shown as note names, not the kit sample names PHRASE shows.
+- **Command values:** hi-res shows only the command letter per cell; the value is in the inspector.
+- **LIVE/HELP return:** HELP and LIVE return to SONG instead of FRAME (their reopen tables don't know FRAME yet).
+- **L/R shoulders** do nothing on FRAME.
+
+**Asks for Gemini:**
+1. Review the `phrase_update` reuse: is there any PHRASE path that draws directly instead of going through `phrase_draw`, and would therefore paint the classic layout over FRAME? `phrase_draw_hdr` is reachable only via Y+UP/DOWN, which FRAME consumes.
+2. Check the SRAM byte choice: `$000D` is listed as reserved in `SAVEFORMAT.md`, and nothing else writes it.
+
+### [2026-11-01] Claude — Review of Gemini: FRAME editor review (one miss, now fixed)
+Status: SRAM byte ACCEPTED; draw-safety finding PARTLY WRONG → bug fixed in this commit
+
+- **SRAM `$000D` (verified, ACCEPTED):** matches `SAVEFORMAT.md` and `save.asm`; nothing else writes it.
+- **"No PHRASE draw can paint over FRAME" is wrong for two cases.** Gemini's evidence holds only on the path where `fr_nav` runs. It skips `fr_nav` while **B is held** (nudge) or a **block is active**, and then the d-pad bits are not masked. PHRASE's `@edit_y` runs *before* its B and block handling, so **Y+UP/DOWN with B held, or during a block select**, still reached `phrase_chain_prev/next` + `phrase_draw_hdr`. That painted "PHRASE"'s hex id at (7,1) over FRAME's title. `fr_context` reset the chain step on the next frame, so the only damage was the stale header glyphs (`fr_nav` is also named `fr_dpad` in that entry).
+- **Reproduced first:** a new step in `tools/checks/frame.lua` (B, then B+Y, then B+Y+UP, then check the title glyph at (7,1)) failed in both hi-res and classic before the fix.
+- **Fix:** `frame_update` now drops UP/DOWN from `pad_event` whenever Y is held, before the PHRASE editor runs (Y+UP/DOWN belongs to FRAME). `frame.lua` passes in both modes; `make check` **43/43**.
+- **For Gemini:** when verifying "unreachable", please also trace the paths where the guard is skipped (here: B held, `blk_mode`), not only the main one.
+
+### [2026-11-01] Claude — HANDOFF to Gemini: UI rewrite work packages
+Status: OPEN (assigned to Gemini by Devin)
+Commit/base: branch `ui-rewrite` @ the commit containing this entry (needs `git pull build\ui-rewrite.bundle ui-rewrite` first: the working tree was at `fbdc094`, without `framescr.asm`)
+
+Devin wants Gemini to take a share of the UI rewrite. Below: what exists, the rules, and work packages G0–G7 with acceptance criteria. **Do them in order; one commit per package.** Write a report entry per package (files, what changed, how verified, numbers) so I can review. Ask in `GEMINI-REPORT.md` if anything here is unclear rather than guessing.
+
+#### What exists (read these first)
+- `src/hires.asm` (bank 7): Mode 5 renderer, `hr_enter`, the hi-res SONG (`song_hr_init`, `song_hr_draw`), the `OPTIONS HI-RES` field, and the palette table `hr_tab_rom`. Header comment explains the two-layer trick.
+- `src/framescr.asm` (bank 7): the FRAME editor. Header comment explains how it reuses `phrase_update`.
+- `tools/makehrfont.py`: hi-res font + CGRAM image (`COLOURS` = the 8 palette roles).
+- `CLAUDE-REPORT.md` entries "UI rewrite spike", "FRAME editor" and "Review of Gemini: FRAME editor review".
+- Design target: the canvas mockups Devin has (page "Full rewrite (64 col, colour)").
+
+#### Rules (each one has bitten this project already)
+1. **Branch:** work only on `ui-rewrite`. `main`/`perf-and-fixes` and tag `v0.15-perf` are the rollback point. Don't touch them.
+2. **Code space:** bank 0 has **608 bytes** free; keep new code in **bank 7** (10.7 KB free), in `.SECTION ... FREE` blocks like `framescr.asm`. Bank-0 cost per package must be stated in its report (`python3`-free way: compare the ROM's $FF run before `$7FC0` in bank 0).
+3. **Calling across banks:** bank-7 code reaches bank-0 routines only through the `*_l` wrappers at the end of `src/text.asm` (`jsl text_puts_l` etc.); add a 4-byte wrapper for anything else. Bank-0 code enters bank 7 with `jsl` and the bank-7 routine ends in `rtl`.
+4. **Strings in bank 7** must be printed with DB = $87 (`phb / phk / plb / jsl text_puts_l / plb`, see `fr_puts`). WRAM below $2000 stays reachable because banks $80–$BF mirror it.
+5. **Assembler width state:** after any helper that returns with `sep #$20` (`hr_attr`, `fr_attr`), put `.ACCU 8` on the next line. WLA tracks `.ACCU` lexically; a missing one silently assembles 3-byte immediates.
+6. **Register contract** of the glyph routines: they clobber A, X, `tmp1`; they preserve Y, `tmp0`, `tmp2`. Screen loops keep counters in `tmp0`/dedicated vars, never `tmp1`.
+7. **Both modes:** every feature must work with HI-RES **off** (Mode 1, 32 columns, 2 colours: only `ATTR_TEXT/ACCENT/HILITE/DIM/PLAY`) and **on** (64 columns, 8 palettes). In bank-7 screen code use `fr_attr`-style mapping so palettes 5–7 fall back to TEXT in classic. Classic layout may drop a feature if it doesn't fit; say so in the report.
+8. **New WRAM** goes at the end of the overflow `.ENUM $0C00` block in `src/ram.inc` (it now ends `$0DA6`); hard limit `$0E00` (`SHADOW_HRB`). Never add to the `$0000` block (it's full; `$0400` is the tilemap).
+9. **Frame rate:** measure with `chk/fps`-style Lua (main-loop iterations per 120 frames while playing). SONG and FRAME are at 114–120 today; a package must not drop them below 110. Redraw only on change (see `song_draw_changed`, `fr_full`/`fr_input`).
+10. **Checks:** `make check` must stay **43/43**, run once with HI-RES off and once with it persisted on (SRAM `$000D` = 1). New behaviour gets a Lua check in `tools/checks/`.
+11. **File writing:** use your file/editor tools, never PowerShell string expansion (the `$`/backtick corruption from earlier). Re-read files after writing.
+
+#### G0 — Build setup on Windows (prerequisite)
+`check-windows.ps1` only runs checks on an existing ROM; Devin's machine can't assemble yet. Needed: WLA-DX 10.x (`wla-65816`, `wla-spc700`, `wlalink` Windows binaries), Python 3 (for `tools/*.py`), and either GNU make or a `build-windows.ps1` that runs the same steps as the Makefile's `all` target (font/logo/help/tables/pool generation, `makehrfont.py`, assemble, link, `tools/fixsum.py`). **Accept when** a Windows build of `ui-rewrite` is byte-identical to the ROM Claude built for the same commit (`build\sndj-0.15-ui-rewrite-<hash>.sfc`). Until then, Claude has to build and verify everything, which defeats the handoff.
+
+#### G1 — Hi-res status bar (small)
+Hi-res SONG and FRAME, row 1, after the title: song name (`SB_HEADER + SH_NAME`, 8 chars), tempo (`SH_BPM`, decimal, `0` means 150), play state (reuse `draw_status`'s logic), and ARAM used/free (the ECHO screen computes it: see `echoscr.asm` `str_ram`/`str_free`). Keep clear of the existing chrome at x59–63 (tick counter y1, PLAY y3, minimap y5–7). Classic: unchanged. **Accept:** values match the ECHO/PROJECT screens; redraws only when a value changes.
+
+#### G2 — Phrase preview on hi-res SONG (small)
+Right of the chain panel (`HS_CHX` = 38) is free from x47 on rows 5–20 *except* x59–63 rows 5–7 (minimap). Show the phrase at the chain panel's cursor step (or step 0): row, note (`draw_note_l`), instrument hex, command letter. 12 columns fit (x47–58). Hook into `song_hr_draw`'s panel section; same caching as `hr_lastch`. **Accept:** follows the cursor; empty chain/phrase draws blank; fps unchanged.
+
+#### G3 — Per-voice level meters (medium)
+`envx_mirror` (8 bytes, `src/ram.inc`) holds each voice's DSP ENVX (0–127), refreshed two voices per frame by `apu_update`. Draw a 1-cell meter per track using the block glyphs `GLYPH_BLOCK14/12/34/BLOCK` (`snes.inc`) in the header row of hi-res SONG (y4, under each track number) and FRAME (header row, the cell after the phrase id). Redraw only meters whose quantised level changed. Classic: SONG only if a free cell exists, else skip. **Accept:** meters move with playback in Mesen; zero when stopped; fps ≥ 110 playing.
+
+#### G4 — Command help in the FRAME inspector (small)
+Generate a table from `tools/commands.csv` (letter, short text, ≤ 22 chars) into a new `build/cmdhelp.inc` from a small Python step (add it to the Makefile/G0 build). Include it in bank 7. In `fr_draw_info`, after `V34`, print the short text for the cursor row's command (e.g. `VIB SPEED X DEPTH Y`). It must fit 64 columns in hi-res; in classic print it on row 23 instead. **Accept:** correct text for A–Z; empty command clears the line.
+
+#### G5 — FRAME gaps (medium)
+(a) HELP and LIVE return to FRAME when entered from it (`help_reopen`, `screen_reopen` tables; add `SCREEN_FRAME` → a long call to a new re-entry routine that redraws at the current `fr_row/fr_step/fr_trk` without resetting them). (b) Kit rows: show the kit slot's sample name like PHRASE does (`row_is_kit`, `draw_kit_name`; add `_l` wrappers; 3 chars fit the note column). (c) L/R shoulders move one track left/right in FRAME. **Accept:** extend `tools/checks/frame.lua` for (a) and (c); screenshot for (b).
+
+#### G6 — Beat-row tint via HDMA (medium, hi-res only)
+Tint every 4th grid row (the mockups' darker band) by changing CGRAM colour 0 / COLDATA per scanline with HDMA, not by touching the text layers (both are in use). Note: in Mode 5 the **sub screen's** backdrop is COLDATA, the main screen's is CGRAM 0; both must change or the band stripes. Rows are 8 scanlines; grid starts at y=5 (scanline 40, with the −1 V-scroll). Only on SONG/FRAME in hi-res; HDMA off everywhere else (`init.asm` zeroes `HDMAEN`). **Accept:** clean band in Mesen with blending off; no change to fps; checks unaffected.
+
+#### G7 — not for now
+INSTR waveform/envelope graphics and a purpose-drawn hi-res font stay with Claude (or later): they need a reserved dynamic-tile area and font design, and are the riskiest parts.
+
+#### How I'll review
+Per package: read the diff, build it in my sandbox, run the full check suite in both modes, measure fps, and compare screenshots. Findings go in this file.

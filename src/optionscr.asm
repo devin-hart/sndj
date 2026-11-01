@@ -9,6 +9,8 @@
 ;   KEY DELAY  frames before d-pad auto-repeat kicks in (4-30)
 ;   KEY RATE   frames between repeats (1-8)
 ;   TAP WIN    B double-tap (paste) window, frames (10-40)
+;   HI-RES     OFF/ON: 64-column colour SONG + FRAME (hires.asm). Needs a
+;              sharp display: emulator hi-res blending off, or HDMI
 ;
 ; genmddj hardcodes its button timing (repeat 16/4, double-tap 24);
 ; sndj exposes it here per CLAUDE.md §16 — everything persists.
@@ -17,7 +19,7 @@
 .ACCU 8
 .INDEX 16
 
-.DEFINE OPT_FIELDS 7
+.DEFINE OPT_FIELDS 8
 .DEFINE OPT_KDELAY_DEF 14
 .DEFINE OPT_KRATE_DEF  3
 .DEFINE OPT_TAPWIN_DEF 24
@@ -134,6 +136,11 @@ options_update:
     jmp options_draw
 @not_sync:
     lda opt_cur
+    cmp #$07
+    bne +
+    jsl opt_hires_edit      ; HI-RES (bank 7)
+    jmp options_draw
++
     cmp #$04
     bcc @pal_maybe
     jmp opt_timing_edit     ; fields 4-6: the button-timing numbers
@@ -306,6 +313,11 @@ options_draw:
     jsr text_puts
     bra @next
 @timing_v:
+    cmp #$07
+    bne +
+    jsl opt_hires_draw
+    bra @next
++
     ; fields 4-6: the timing numbers, decimal frames
     sec
     sbc #$04
@@ -328,7 +340,7 @@ options_draw:
     lda ui_cnt
     cmp #OPT_FIELDS
     bne @rows_far
-    ; monitor line (y14): IN/IN24 show clocks received, MIDI shows the
+    ; monitor line (y15): IN/IN24 show clocks received, MIDI shows the
     ; decoded-event counter + last frame — the bring-up diagnostic
     lda opt_sync
     cmp #SYNC_IN
@@ -340,7 +352,7 @@ options_draw:
     ; not a monitored mode: blank the line (stale RX text otherwise)
     lda #1
     sta text_x
-    lda #13
+    lda #15
     sta text_y
     rep #$20
 .ACCU 16
@@ -353,7 +365,7 @@ options_draw:
 @mon:
     lda #1
     sta text_x
-    lda #13
+    lda #15
     sta text_y
     rep #$20
 .ACCU 16
@@ -478,7 +490,7 @@ opt_t_min: .DB 4,  1, 10
 opt_t_max: .DB 30, 8, 40
 
 opt_labels: .DW str_o_pal, str_o_clone, str_o_vid, str_o_sync
-            .DW str_o_kdel, str_o_krat, str_o_tapw
+            .DW str_o_kdel, str_o_krat, str_o_tapw, str_o_hires
 sync_names: .DW str_o_soff, str_o_sout, str_o_spul, str_o_sin, str_o_smid, str_o_s24
 
 str_options: .DB "OPTIONS", 0
@@ -500,5 +512,6 @@ str_o_s24:   .DB "IN24 ", 0
 str_o_kdel:  .DB "KEY DELAY", 0
 str_o_krat:  .DB "KEY RATE", 0
 str_o_tapw:  .DB "TAP WIN", 0
+str_o_hires: .DB "HI-RES", 0
 str_o_rx:    .DB "RX ", 0
 str_o_blank: .DB "                ", 0

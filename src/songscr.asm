@@ -18,9 +18,12 @@ song_init_screen:
     lda #SCREEN_SONG
     sta ui_mode
     jsr text_clear
-    jsl hr_enter            ; UI rewrite spike: SONG draws at 64 columns
+    lda opt_hires
+    beq @classic
+    jsl hr_enter            ; OPTIONS HI-RES: SONG draws at 64 columns
     jsl song_hr_init
     rts
+@classic:
     stz text_x
     lda #1
     sta text_y
