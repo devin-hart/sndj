@@ -32,41 +32,47 @@ function filterPredict(f, p1, p2) {
     (((p2 << 1) + p2) >> 4);
 }
 
-function brrEncodeBlock(samples, p1, p2, forceF0) {
-  let best = null;
-  const filters = forceF0 ? [0] : [0, 1, 2, 3];
-  for (const filt of filters) {
+// Exhaustive filter x range search for one 16-sample block starting at
+// samples[off]. Allocation-free inner loops (this runs 52 trials per block);
+// results are byte-identical to tools/sndj_brr.py (test_sf2 enforces it).
+const BRR_NIBS = new Int8Array(16), BRR_BEST_NIBS = new Int8Array(16);
+function brrEncodeBlock(samples, p1, p2, forceF0, off) {
+  off = off || 0;
+  let bestErr = -1, bestRng = 0, bestFilt = 0, bestP1 = 0, bestP2 = 0;
+  const nf = forceF0 ? 1 : 4;
+  for (let filt = 0; filt < nf; filt++) {
     for (let rng = 0; rng <= 12; rng++) {
-      const nibs = [];
       let tp1 = p1, tp2 = p2, err = 0;
-      for (const s of samples) {
-        const target = Math.floor(s / 2);  // python // floors negatives
+      for (let i = 0; i < 16; i++) {
+        const target = Math.floor(samples[off + i] / 2);  // python // floors negatives
         const pred = filterPredict(filt, tp1, tp2);
         const resid = target - pred;
         const base = rng ? (resid * 2) >> rng : resid * 2;
-        let cb = null;
-        for (let nib of [base, base + 1]) {
-          nib = Math.max(-8, Math.min(7, nib));
-          const dec = clamp16(((nib << rng) >> 1) + pred);
-          const e = (dec - target) ** 2;
-          if (cb === null || e < cb[0]) cb = [e, nib, dec];
-        }
-        err += cb[0];
+        // candidates base, base + 1 (clamped); first wins ties
+        let nib = Math.max(-8, Math.min(7, base));
+        let dec = clamp16(((nib << rng) >> 1) + pred);
+        let e = (dec - target) ** 2;
+        const nib2 = Math.max(-8, Math.min(7, base + 1));
+        const dec2 = clamp16(((nib2 << rng) >> 1) + pred);
+        const e2 = (dec2 - target) ** 2;
+        if (e2 < e) { e = e2; nib = nib2; dec = dec2; }
+        err += e;
         tp2 = tp1;
-        tp1 = cb[2];
-        nibs.push(cb[1] & 0x0F);
+        tp1 = dec;
+        BRR_NIBS[i] = nib;
       }
-      if (best === null || err < best[3]) {
-        const block = new Uint8Array(9);
-        block[0] = (rng << 4) | (filt << 2);
-        for (let i = 0; i < 8; i++) {
-          block[1 + i] = (nibs[i * 2] << 4) | nibs[i * 2 + 1];
-        }
-        best = [block, tp1, tp2, err];
+      if (bestErr < 0 || err < bestErr) {
+        bestErr = err; bestRng = rng; bestFilt = filt; bestP1 = tp1; bestP2 = tp2;
+        BRR_BEST_NIBS.set(BRR_NIBS);
       }
     }
   }
-  return best;
+  const block = new Uint8Array(9);
+  block[0] = (bestRng << 4) | (bestFilt << 2);
+  for (let i = 0; i < 8; i++) {
+    block[1 + i] = ((BRR_BEST_NIBS[i * 2] & 0x0F) << 4) | (BRR_BEST_NIBS[i * 2 + 1] & 0x0F);
+  }
+  return [block, bestP1, bestP2, bestErr];
 }
 
 function brrEncode(samples, loopBlock) {
@@ -76,8 +82,7 @@ function brrEncode(samples, loopBlock) {
   let p1 = 0, p2 = 0;
   for (let b = 0; b < nblocks; b++) {
     const forceF0 = b === 0 || (loopBlock !== null && b === loopBlock);
-    const [block, np1, np2] =
-      brrEncodeBlock(samples.slice(b * 16, b * 16 + 16), p1, p2, forceF0);
+    const [block, np1, np2] = brrEncodeBlock(samples, p1, p2, forceF0, b * 16);
     p1 = np1;
     p2 = np2;
     let hdr = block[0];
@@ -940,9 +945,11 @@ function decodeBrr(d, v, header, brrByte) {
   }
 }
 
-function dspRun(d, n) {
-  const outL = new Int16Array(n);
-  const outR = new Int16Array(n);
+// outL/outR/off are optional: pass caller-owned Int16Arrays to render into
+// them at offset `off` without allocating (seqTickRun does this per tick).
+function dspRun(d, n, outL, outR, off) {
+  if (!outL) { outL = new Int16Array(n); outR = new Int16Array(n); off = 0; }
+  off = off || 0;
   const { aram, regs } = d;
   for (let i = 0; i < n; i++) {
     // global per-sample state (misc_27..30)
@@ -1075,8 +1082,8 @@ function dspRun(d, n) {
     let r = clamp(i16((mainR * i8(regs[0x1C])) >> 7)
       + i16((echoInR * i8(regs[0x3C])) >> 7));
     if (flg & 0x40) { l = 0; r = 0; }
-    outL[i] = l;
-    outR[i] = r;
+    outL[off + i] = l;
+    outR[off + i] = r;
     d.echoOutL = clamp(echoL + i16((echoInL * i8(regs[0x0D])) >> 7)) & ~1;
     d.echoOutR = clamp(echoR + i16((echoInR * i8(regs[0x0D])) >> 7)) & ~1;
     // echo_29/30: write back + advance
@@ -2019,9 +2026,7 @@ function seqTickRun(seq) {
   let o = 0;
   if (seq.koffMask) {
     dspWrite(d, 0x5C, seq.koffMask);
-    const pre = dspRun(d, 2);
-    outL.set(pre.l, 0);
-    outR.set(pre.r, 0);
+    dspRun(d, 2, outL, outR, 0);
     o = 2;
     dspWrite(d, 0x5C, 0);
   }
@@ -2029,9 +2034,7 @@ function seqTickRun(seq) {
     dspWrite(d, 0x4C, seq.konMask);
     seq.konCount++;
   }
-  const g = dspRun(d, n - o);
-  outL.set(g.l, o);
-  outR.set(g.r, o);
+  dspRun(d, n - o, outL, outR, o);
   return { l: outL, r: outR };
 }
 
