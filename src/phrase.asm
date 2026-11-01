@@ -51,6 +51,20 @@ phrase_init:
 ; input
 ; ---------------------------------------------------------------------------
 phrase_update:
+    ; X: open FRAME (every track at this chain step)
+    rep #$20
+.ACCU 16
+    lda pad_pressed
+    and #PAD_X
+    sep #$20
+.ACCU 8
+    beq +
+    lda ui_mode
+    cmp #SCREEN_PHRASE      ; (FRAME runs this editor too)
+    bne +
+    jsl frame_enter
+    rts
++
     ; Start: play/stop
     rep #$20
 .ACCU 16
@@ -1089,6 +1103,11 @@ phrase_paste:
     rts
 
 phrase_draw:
+    lda ui_mode
+    cmp #SCREEN_FRAME       ; FRAME draws its own columns
+    bne +
+    rts
++
     stz tmp0 + 1            ; row counter
 @rows:
     lda tmp0 + 1

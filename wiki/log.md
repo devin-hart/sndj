@@ -68,3 +68,9 @@ Format: `## [YYYY-MM-DD] <ingest|query|lint> | <Title>`
 - `src/pool.asm`: `residency_refresh` + `res_dirent`; `residency_build` now clears `res_addr` and is the compacting path. `src/instrscr.asm` (SAMPLE/SLICES/LOOP) and `src/kitscr.asm` call the refresh; `src/echoscr.asm` compacts on entry when `res_frag` is set. `src/ram.inc`: `res_addr` etc. at `$0CE1–$0D65`.
 - Updated [`files-scpu-engine.md`](files-scpu-engine.md) and [`memory-and-hardware.md`](memory-and-hardware.md) (bank 0 now 837 bytes free).
 
+
+## [2026-11-01] ingest | UI rewrite branch: hi-res renderer, FRAME editor, HI-RES option (Claude)
+- Branch `ui-rewrite` (from tag `v0.15-perf`). New bank-7 code: `src/hires.asm` (Mode 5 two-layer 64-column text, hi-res SONG) and `src/framescr.asm` (FRAME editor, `SCREEN_FRAME` = 16). New tool `tools/makehrfont.py`; new check `tools/checks/frame.lua`.
+- OPTIONS field 7 `HI-RES` (SRAM `$000D`, default off). Off: every screen is classic Mode 1; FRAME uses a 3-track side-scrolling view.
+- `src/ram.inc`: overflow block now ends `$0DA6` (`ui_hires`, `ui_xoff`, `hr_*`, `opt_hires`, `fr_*`); `SHADOW_HRB` = `$0E00–$14FF`. Bank 0: 608 bytes free; bank 7: 10.7 KB free.
+- The wiki pages are not yet updated for this branch; they describe `perf-and-fixes`.
