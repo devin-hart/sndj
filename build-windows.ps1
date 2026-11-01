@@ -65,11 +65,17 @@ if (-not (Test-Path $buildIdFile) -or (Get-Content $buildIdFile -Raw) -ne $build
 # 3. Python data generation
 Write-Host "Generating assets and tables..."
 python tools/makefont.py (Join-Path $build "font.bin")
+if ($LASTEXITCODE -ne 0) { throw "makefont.py failed" }
 python tools/makehrfont.py $build
+if ($LASTEXITCODE -ne 0) { throw "makehrfont.py failed" }
 python tools/makelogo.py (Join-Path $build "logo.bin") (Join-Path $build "logo.inc")
+if ($LASTEXITCODE -ne 0) { throw "makelogo.py failed" }
 python tools/makehelp.py help.txt (Join-Path $build "help.inc")
+if ($LASTEXITCODE -ne 0) { throw "makehelp.py failed" }
 python tools/maketables.py $build
+if ($LASTEXITCODE -ne 0) { throw "maketables.py failed" }
 python tools/sndj_pool.py (Join-Path $build "pool.bin")
+if ($LASTEXITCODE -ne 0) { throw "sndj_pool.py failed" }
 
 # 4. SPC700 driver
 Write-Host "Assembling SPC700 driver..."

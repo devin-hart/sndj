@@ -2,7 +2,8 @@
 build/
 
 # Emulator cores fetched by tools/emu/ (never committed, per CLAUDE.md §4.3)
-tools/emu/cores/
+tools/emu/
+tools/bin/
 
 # macOS
 .DS_Store
