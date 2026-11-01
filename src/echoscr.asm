@@ -28,6 +28,12 @@ ef_l4: .DB "EON MASK", 0
 ef_l5: .DB "FIR", 0
 
 echo_init:
+    ; sample swaps may have left replaced data in ARAM: pack it first so
+    ; the DELAY limit and the RAM/FREE ledger count only live samples
+    lda.w res_frag
+    beq +
+    jsr residency_build
++
     lda #SCREEN_ECHO
     sta ui_mode
     stz if_cur              ; reuse the INSTR field cursor

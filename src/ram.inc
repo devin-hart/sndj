@@ -312,6 +312,14 @@ sd_t         db      ; song_draw_changed: grid track counter
 sd_r         db      ; song_draw_changed: grid row counter
 sd_snap      ds 176  ; last-drawn inputs of song_draw: 7 scalars, 8 x 5 track
                      ; playhead bytes, the cue flash, 8 x 16 visible cells
+res_addr     ds 128  ; ARAM start of each pool sample's data (16-bit; 0 = not
+                     ; in ARAM). residency_refresh reuses it instead of
+                     ; re-uploading; residency_build (compacting) clears it
+res_start    dw      ; res_mark: ARAM start of the sample being entered
+res_keep     db      ; residency pass keeps resident data (refresh mode)
+res_over     db      ; a refresh pass ran out of room (stale data in the way)
+res_frag     db      ; ARAM may hold unreferenced data since the last full
+                     ; build (ECHO compacts first so its budget is exact)
 .ENDE
 
 ; Shadow of the BG3 tilemap (32x32 words). NMI DMAs this to VRAM every frame;

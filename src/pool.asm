@@ -110,7 +110,41 @@ pool_entry_src:
 
 ; --- rebuild the resident sample set from the song ------------------------------
 ; Carry set on mailbox failure.
+; residency_refresh: the edit-time variant (INSTR SAMPLE/SLICES/LOOP, KIT
+; samples). Same directory/alias rebuild, but a sample whose data is already
+; in ARAM is reused in place, so a swap uploads only the new sample instead
+; of the whole resident set (~0.85 s for the factory song). Replaced data
+; stays behind until the next full build; if a new sample doesn't fit
+; around it, fall back to the full (compacting) build.
+residency_refresh:
+    lda #$01
+    sta.w res_keep
+    stz.w res_over
+    jsr residency_pass
+    php
+    stz.w res_keep
+    lda #$01
+    sta.w res_frag          ; replaced samples may now sit unreferenced
+    lda.w res_over
+    bne @compact
+    plp
+    rts
+@compact:
+    plp
+    ; fall through: rebuild packed
+
+; residency_build: the full, compacting rebuild (boot, song load/NEW, TYPE
+; edits, ECHO entry after edits, refresh overflow). Re-uploads everything.
 residency_build:
+    stz.w res_keep
+    stz.w res_frag
+    ldx #$0000
+@ra_clr:
+    stz.w res_addr,x
+    inx
+    cpx #$0080
+    bne @ra_clr
+residency_pass:
     lda.l POOL_ROM + 8
     cmp #$02
     beq @v_ok
@@ -127,6 +161,9 @@ residency_build:
     inx
     cpx #$0040
     bne @clr
+    ; a refresh keeps the stub and the data cursor (high-water) as they are
+    lda.w res_keep
+    bne @stub_dir
     ; slot 0: the silent stub, always resident at ARAM_SAMPLES
     ldx #silent_brr
     stx up_src
@@ -140,18 +177,19 @@ residency_build:
     bcc @stub_ok
     rts
 @stub_ok:
-    lda #<ARAM_SAMPLES
-    sta.w res_dir
-    sta.w res_dir + 2
-    lda #>ARAM_SAMPLES
-    sta.w res_dir + 1
-    sta.w res_dir + 3
     rep #$30
 .ACCU 16
     lda #(ARAM_SAMPLES + 9)
     sta res_cursor
     sep #$20
 .ACCU 8
+@stub_dir:
+    lda #<ARAM_SAMPLES
+    sta.w res_dir
+    sta.w res_dir + 2
+    lda #>ARAM_SAMPLES
+    sta.w res_dir + 1
+    sta.w res_dir + 3
     lda #$01
     sta res_slot
     ; ARAM ceiling: below the echo buffer (ESA page = $100 - 8*EDL)
@@ -515,6 +553,28 @@ res_mark:
     phx
     lda res_cur
     jsr pool_entry_src      ; up_src/up_len + es2 (loop block)
+    ; already in ARAM (kept by a refresh)? point the directory at it
+    lda res_cur
+    rep #$30
+.ACCU 16
+    and #$00FF
+    asl
+    tax
+    lda.w res_addr,x
+    beq @place
+    sta.w res_start
+    sep #$20
+.ACCU 8
+    jsr res_dirent
+    plx
+    lda res_slot
+    sta.w pool_map,x
+    inc res_slot
+    rts
+@place:
+.ACCU 16
+    sep #$20
+.ACCU 8
     ; budget: end page must stay under the echo ceiling (a 16-bit carry
     ; here means we wrapped ARAM entirely — definitely over)
     rep #$30
@@ -531,12 +591,16 @@ res_mark:
     lda es0
     cmp res_ceil
     bcc @fits
+    lda #$01
+    sta.w res_over          ; (a refresh then rebuilds packed)
     plx
     rts                     ; over budget: silence
 @over16:
 .ACCU 16
     sep #$20
 .ACCU 8
+    lda #$01
+    sta.w res_over
     plx
     rts
 @fits:
@@ -544,40 +608,12 @@ res_mark:
 .ACCU 16
     lda res_cursor
     sta up_dest
+    sta.w res_start
     sep #$20
 .ACCU 8
-    ; dir entry: start + loop (start + loopblock*9; one-shot -> start)
-    lda res_slot
+    jsr res_dirent          ; dir entry: start + loop (clobbers X/Y)
     rep #$30
 .ACCU 16
-    and #$00FF
-    asl
-    asl
-    clc
-    adc #res_dir
-    tay
-    lda res_cursor
-    sta.w $0000,y
-    ldx es2
-    cpx #$FFFF
-    beq @oneshot
-    lda es2
-    asl
-    asl
-    asl
-    clc
-    adc es2
-    clc
-    adc res_cursor
-    bra @loop_set
-@oneshot:
-    ; one-shots "loop" into the silent stub: every sample uploads with
-    ; LOOP+END on its final block (patched below), so loop-or-not is
-    ; purely the directory's choice — per-instrument aliases can then
-    ; flip it without touching the shared data
-    lda #ARAM_SAMPLES
-@loop_set:
-    sta.w $0002,y
     lda res_cursor
     clc
     adc up_len
@@ -593,6 +629,17 @@ res_mark:
 .ACCU 8
     jsr apu_upload_block
     bcs @up_fail
+    ; remember where it lives, so a refresh can reuse it
+    lda res_cur
+    rep #$30
+.ACCU 16
+    and #$00FF
+    asl
+    tax
+    lda.w res_start
+    sta.w res_addr,x
+    sep #$20
+.ACCU 8
     plx
     lda res_slot
     sta.w pool_map,x
@@ -600,6 +647,43 @@ res_mark:
     rts
 @up_fail:
     plx
+    rts
+
+; directory entry for slot res_slot: start = res_start, loop = start +
+; loopblock*9 (es2; $FFFF = one-shot -> the silent stub). One-shots "loop"
+; into the stub: every sample uploads with LOOP+END on its final block, so
+; loop-or-not is purely the directory's choice and per-instrument aliases
+; can flip it without touching the shared data. A8 in/out; clobbers X, Y.
+res_dirent:
+    lda res_slot
+    rep #$30
+.ACCU 16
+    and #$00FF
+    asl
+    asl
+    clc
+    adc #res_dir
+    tay
+    lda.w res_start
+    sta.w $0000,y
+    ldx es2
+    cpx #$FFFF
+    beq @oneshot
+    lda es2
+    asl
+    asl
+    asl
+    clc
+    adc es2
+    clc
+    adc.w res_start
+    bra @loop_set
+@oneshot:
+    lda #ARAM_SAMPLES
+@loop_set:
+    sta.w $0002,y
+    sep #$20
+.ACCU 8
     rts
 
 ; one silent BRR block (END, no loop)

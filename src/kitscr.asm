@@ -314,7 +314,7 @@ kt_nudge:
     ; sample edits change the resident set
     lda kt_col
     bne @done
-    jsr residency_build
+    jsr residency_refresh   ; upload only the new sample
 @done:
     rts
 

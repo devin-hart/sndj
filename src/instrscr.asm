@@ -595,7 +595,12 @@ if_nudge:
     beq @no_res
     cmp #$05
     bcs @no_res
-    jsr residency_build
+    cmp #$01
+    bne @res_quick
+    jsr residency_build     ; TYPE: full rebuild (KARP may resize the room)
+    bra @no_res
+@res_quick:
+    jsr residency_refresh   ; SAMPLE/SLICES/LOOP: upload only what's new
 @no_res:
     ; flipping TYPE to KARP sizes the room for a string: the tuning
     ; tables assume DELAY 1 or 2, and a NEW song sits at the ARAM max
