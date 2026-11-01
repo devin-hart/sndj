@@ -34,7 +34,7 @@ The cartridge uses **LoROM** with `.BASE $80` so code executes out of the **3.58
 
 > [!CAUTION]
 > **Bank 0 Space Constraint & WLA-DX Cross-Bank Label Gotcha:**
-> 1. **Bank 0 ends at `.ORG $7FC0` (`$80:FFC0`).** Measured 2026-11-01 from a real build: **977 bytes free** after P2 (1,208 after P1/P3/P4; 1,276 at `857faf3`). Re-measure with the last-label method in `CLAUDE-REPORT.md` after large additions. If adding code causes `wlalink` to fail with a section/org overlap at `$7FC0`, move cold subroutines or lookup tables into `.BANK 6 SLOT 0` (see [`src/sync.asm`](../src/sync.asm) lines 131–240 for the exact pattern).
+> 1. **Bank 0 ends at `.ORG $7FC0` (`$80:FFC0`).** Measured 2026-11-01 from a real build: **837 bytes free** after `residency_refresh` (977 after P2; 1,208 after P1/P3/P4; 1,276 at `857faf3`). Re-measure with the last-label method in `CLAUDE-REPORT.md` after large additions. If adding code causes `wlalink` to fail with a section/org overlap at `$7FC0`, move cold subroutines or lookup tables into `.BANK 6 SLOT 0` (see [`src/sync.asm`](../src/sync.asm) lines 131–240 for the exact pattern).
 > 2. **WLA-DX drops the bank byte (`$81`) on cross-bank label expressions in long-indexed operands** (`lda.l label+offset,x` assembles with bank `$00`!). That is why `POOL_ROM` is defined as a numeric literal `.DEFINE POOL_ROM $818006` in [`src/song.inc`](../src/song.inc) and `POOL_TABLE` as `(POOL_ROM + 16)` in [`src/pool.asm`](../src/pool.asm). Always verify cross-bank indexed reads!
 
 ---
@@ -48,7 +48,7 @@ $7E:0000 .. $7E:003F   FROZEN Check Block (NEVER reorder — tools/checks/*.lua 
 $7E:0040 .. $7E:00FF   Direct Page pointers & hot scalars (up_src, sv_src, sv_dst, tmp0..2, etc.)
 $7E:0100 .. $7E:03FF   Main WRAM variables (FULL — DO NOT ADD VARS HERE! Ends at $03FA since pal_buf2 moved to $0C24; $03FA–$03FF are 6 spare bytes)
 $7E:0400 .. $7E:0BFF   SHADOW_BG3 (2 KB = 32x32 word tilemap shadow, DMA'd to VRAM every NMI)
-$7E:0C00 .. $7E:0CE0+  Overflow WRAM variables (.ENUM $0C00 — add ALL new variables here! pal_buf2 = $0C24–$0C2B, sd_* SONG-draw snapshot = $0C2C–$0CE0)
+$7E:0C00 .. $7E:0CE0+  Overflow WRAM variables (.ENUM $0C00 — add ALL new variables here! pal_buf2 = $0C24–$0C2B, sd_* SONG-draw snapshot = $0C2C–$0CE0, res_addr/res_start/res_keep/res_over/res_frag = $0CE1–$0D65)
    ...                 (Free low WRAM; hardware stack grows down from S = $1FFF)
 $7E:2000 .. $7E:72FF   Contiguous Song Block (SB .. SB_END, $5300 = 21,248 bytes — see §2.2)
 $7E:7400 .. $7E:75FF   Editor 2D Block-Select Clipboard (SONG / CHAIN / PHRASE copy/cut/paste)

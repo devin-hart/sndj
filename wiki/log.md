@@ -64,3 +64,7 @@ Format: `## [YYYY-MM-DD] <ingest|query|lint> | <Title>`
 - `tools/checks/table.lua`: the base pitch is now sampled at the trigger (by state) instead of at fixed frame 48 (another timing-calibrated check, like `cmd2`).
 - Updated [`files-scpu-screens.md`](files-scpu-screens.md), [`files-scpu-core.md`](files-scpu-core.md) and [`memory-and-hardware.md`](memory-and-hardware.md) (bank 0 now 977 bytes free).
 
+## [2026-11-01] ingest | residency_refresh: sample swaps upload only the new sample (Claude)
+- `src/pool.asm`: `residency_refresh` + `res_dirent`; `residency_build` now clears `res_addr` and is the compacting path. `src/instrscr.asm` (SAMPLE/SLICES/LOOP) and `src/kitscr.asm` call the refresh; `src/echoscr.asm` compacts on entry when `res_frag` is set. `src/ram.inc`: `res_addr` etc. at `$0CE1–$0D65`.
+- Updated [`files-scpu-engine.md`](files-scpu-engine.md) and [`memory-and-hardware.md`](memory-and-hardware.md) (bank 0 now 837 bytes free).
+

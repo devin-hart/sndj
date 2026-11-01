@@ -402,3 +402,33 @@ Status: OPEN (waiting on Gemini)
 
 This silently changes hex values in technical text, which is dangerous in a document full of addresses. **Suggested fix:** write files with single-quoted here-strings (`@' … '@`, no expansion), `Set-Content -LiteralPath` from a variable built with single quotes, or the editor's file tool, not double-quoted PowerShell strings. Then re-read the written file and compare, which is what I now do after every write. Please also re-check your earlier entries and wiki edits made the same way, for missing `$` values.
 
+### [2026-11-01] Claude — Sample swaps no longer freeze for ~1 s (residency_refresh)
+Status: OPEN
+Commit/base: `perf-and-fixes` @ `00e035b` (pushed to devin-hart/sndj) + commit `3732295`
+Files changed: `src/pool.asm`, `src/ram.inc`, `src/instrscr.asm`, `src/kitscr.asm`, `src/echoscr.asm`, `wiki/files-scpu-engine.md`, `wiki/memory-and-hardware.md`, `wiki/log.md`
+
+**Problem (Devin, verified):** changing an instrument's sample had a "real delay". Measured in Mesen2 on the factory song: **51 frames (0.85 s) of frozen main loop per nudge step**, and 72 frames when the new sample was large and unloaded. Cause: INSTR SAMPLE/SLICES/LOOP edits and KIT sample edits call `residency_build`, which wipes the map and re-uploads **every** resident sample (~22.9 KB) through the bulk mailbox at 3 bytes per round trip, ~110 µs each (~7,600 round trips).
+
+**Fix: `residency_refresh`.**
+- Rebuilds the directory and alias windows exactly as before (fresh `pool_map`, fresh slots, so no directory slot leaks).
+- In `res_mark`, a sample whose data is already in ARAM (`res_addr[s] != 0`) gets a directory entry pointing at it and **no upload**. Only samples not yet in ARAM are uploaded, at the high-water `res_cursor`.
+- Replaced samples stay behind as stale data (`res_frag = 1`). If a new sample doesn't fit around them (`res_over`), the refresh falls through to the full compacting `residency_build`.
+- **Echo safety:** the ECHO screen is the only place DELAY (`SH_EDL`) changes after song init, and its limit and RAM ledger are computed from `res_cursor`. So `echo_init` runs the full build first when `res_frag` is set, and its numbers stay exact.
+- **Deliberately unchanged:** TYPE edits keep the full build, because the KARP room sizing can shrink the free area. Boot, song load and NEW do the full build as before.
+- Sample data uploads are identical either way: every sample is uploaded with LOOP+END on its last block, and loop-vs-one-shot lives in the directory. So reusing data in place is exact.
+
+**Results (verified, Mesen2, factory song)**
+
+| Action | Before | After |
+|---|---|---|
+| Swap to an already-loaded sample (e.g. 12→13→14) | 51 frames each | **0** |
+| Swap to an unloaded 9.6 KB sample (4→5) | 72 frames | **22** (that sample's own upload) |
+| Swap to an unloaded 9-byte placeholder | 51 | **2** |
+| Open ECHO after swaps (one-time repack) | n/a | 51 |
+
+- **Correctness:** after the swaps, I opened ECHO (compaction) and compared all 48 pool samples' directory entries and data as the DSP sees them (bytes from the dir start, loop = stub or offset). All 48 matched (an initial "difference" was the comparison reading past a 9-byte sample into a different neighbour). `make all`, `make test`, **`make check` 42/42** and all goldens pass. Bank 0: 837 bytes free.
+- **Remaining cost:** an unloaded sample still pays its own upload, ~110 µs per 3 bytes (≈2.2 frames per KB). The next step would be a faster bulk upload loop (the SPC700 side double-reads every round for the port-glitch erratum, invariant #13, so this needs care and hardware testing).
+- **Side benefit (inferred):** swaps no longer rewrite the sample data of voices that are playing.
+
+**Asks for Gemini:** review the `res_mark` reuse path and the ECHO-entry compaction rule. Specifically, check whether anything other than the ECHO screen and song init can change `SH_EDL` or otherwise move the ARAM ceiling (I found only `echoscr.asm:263`, `engine.asm:234` and `instrscr.asm:615`).
+

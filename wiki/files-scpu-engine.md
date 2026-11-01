@@ -66,6 +66,9 @@ See also: [`memory-and-hardware.md`](memory-and-hardware.md), [`subsystems-audio
     3. Scans all 64 instruments (`SB_INSTR`, marking type 0 `SMP` samples via `res_mark`) and all 16×16 kit slots (`SB_KITS` where `vol > 0`, marking slot samples via `res_mark`).
     4. Runs a second pass over `SB_INSTR` to build zero-copy ARAM directory aliases in `slice_base[64]` for type 4 `SLICE` instruments (`2..16` equal block-aligned divisions) and type 0 `SMP` instruments with non-zero `LOOP` override (`rec[7]` bits 1–2).
     5. Uploads the 224-byte `res_dir` table (`56 * 4` bytes) to `ARAM_DIR` (`$1000`).
+    - Full and **compacting**: clears `res_addr[]` and re-uploads every referenced sample (~0.85 s for the factory song). Used at boot, song load/NEW, INSTR TYPE edits, ECHO entry when `res_frag` is set, and as the refresh fallback.
+  - `residency_refresh` (2026-11-01): the edit-time variant for INSTR SAMPLE/SLICES/LOOP and KIT sample edits. Same directory/alias rebuild, but `res_mark` reuses any sample whose data is already in ARAM (`res_addr[s]`, 16-bit start; 0 = absent) and uploads only new ones. `res_cursor` stays at its high-water mark, so replaced data is left behind (`res_frag = 1`). If a new sample doesn't fit around it (`res_over`), it falls through to the full build. Measured: swap to a resident sample 51 → 0 frames; to an unloaded 9.6 KB sample 72 → 22 frames.
+  - `res_dirent`: writes directory entry `res_slot` from `res_start` + the pool loop block (`es2`; one-shots loop into the silent stub).
 
 ---
 
