@@ -73,13 +73,13 @@ The SNES PPU supports 8 screen modes (`BGMODE $2105`, bits 2:0):
 
 ## 3. UI Modernization Opportunities for `sndj`
 
-Because `sndj` currently leaves **BG1, BG2, Sprites (OBJ), HDMA, and Color Math completely unused**, graphical features can be added alongside the tracker text layer.
+Because `sndj` currently leaves **BG1, BG2, Sprites (OBJ), HDMA, and Color Math completely unused**, additional graphical features can be layered into the UI. However, because plain font glyphs render on transparent color 0 (`tools/makefont.py:10`), any active background layer will show through normal text cells unless window-masked (`$2123–$2129`), restricted to empty borders/margins, or rendered with an opaque font background.
 
 ### 3.1 Enabling BG1 / BG2 for Visual Backdrops and Waveform Scopes
 - In Mode 1, `BG3` priority bit (`$2105` bit 3 = `1`) guarantees that all text in `SHADOW_BG3` with Priority Bit 13 (`ATTR_TEXT`, `ATTR_HILITE`, `ATTR_ACCENT`) renders **in front of BG1 and BG2**.
 - Enabling BG1 (`lda #$05 / sta TM`):
   - BG1 is 4bpp (16 colors per tile).
-  - Can display real-time animated audio waveforms, spectrum visualizers, or custom tracker skins.
+  - Can display animated audio waveforms, spectrum visualizers, or custom tracker skins (caution: plain font glyphs have transparent backgrounds, so BG1 shows through text cells unless masked with PPU windows or restricted to non-text borders).
   - Can be scrolled independently in hardware using `BG1HOFS` (`$210D`) and `BG1VOFS` (`$210E`) with **zero CPU redraw overhead**.
   > [!WARNING]
   > **Transparent Background Caveat**: Plain font glyphs render on transparent color 0 (`tools/makefont.py:10`). Therefore, any enabled BG1 backdrop shows through the background of normal text cells (only inverted cells are fully opaque). To prevent unreadable UI contrast, BG1 artwork must be very low-contrast, confined via PPU windows (`$2123–$2129`) to margins without text, or paired with an opaque font background.
@@ -88,7 +88,7 @@ Because `sndj` currently leaves **BG1, BG2, Sprites (OBJ), HDMA, and Color Math 
 - **VRAM Budget**: A dynamic 4-tile or 8-tile oscilloscope band requires only 8–16 2bpp tiles (128–256 bytes) or 4bpp tiles (256–512 bytes).
 - **Execution Strategy**:
   1. Allocate 8 consecutive dynamic tile IDs in VRAM.
-  2. In `main_loop`, render waveform samples into a small WRAM staging buffer.
+  2. In `main_loop`, unpack waveform samples received via SPC mailbox telemetry (or S-CPU software synthesis) and render dot/column vectors into a small WRAM dynamic tile staging buffer.
   3. During NMI, execute a tiny 128-byte DMA to the dynamic tile VRAM address.
   4. The oscilloscope immediately animates smoothly at 60 Hz without redrawing the tilemap!
   > [!IMPORTANT]
@@ -96,7 +96,7 @@ Because `sndj` currently leaves **BG1, BG2, Sprites (OBJ), HDMA, and Color Math 
 
 ### 3.3 Hardware Sprites (OBJ) for Floating Cursors & Meters
 - **OAM (Object Attribute Memory)**: 544 bytes (`128 sprites × 4 bytes` + 32 bytes high table).
-- Sprites can be 8×8, 16×16, 32×32, or 64×64 pixels with 4bpp graphics (using CGRAM colors 128–255, OBJ palettes 0–7).
+- Sprites can be 8×8, 16×16, 32×32, or 64×64 pixels with 4bpp graphics using CGRAM colors 128–255 (OBJ palettes 0–7, each with 16 colors where color 0 is transparent; distinct from BG palettes 0–7 which reside at colors 0–127).
 - **UI Applications**:
   - Smooth pixel-positioned edit cursor (smoothly sliding between cells instead of jumping 8 pixels).
   - Floating VU meter needles or clip indicators.

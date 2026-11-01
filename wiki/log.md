@@ -67,4 +67,5 @@ Format: `## [YYYY-MM-DD] <ingest|query|lint> | <Title>`
 ## [2026-11-01] ingest | residency_refresh: sample swaps upload only the new sample (Claude)
 - `src/pool.asm`: `residency_refresh` + `res_dirent`; `residency_build` now clears `res_addr` and is the compacting path. `src/instrscr.asm` (SAMPLE/SLICES/LOOP) and `src/kitscr.asm` call the refresh; `src/echoscr.asm` compacts on entry when `res_frag` is set. `src/ram.inc`: `res_addr` etc. at `$0CE1–$0D65`.
 - Updated [`files-scpu-engine.md`](files-scpu-engine.md) and [`memory-and-hardware.md`](memory-and-hardware.md) (bank 0 now 837 bytes free).
-
+## [2026-11-01] update | Clarified PPU font transparency, oscilloscope telemetry, and OBJ palettes (Gemini)
+- `wiki/subsystems-graphics-and-ui.md`: Updated §3 intro, §3.1, §3.2, and §3.3 to document that plain font glyphs render on transparent color 0 (`tools/makefont.py:10`) showing background layers through normal text cells unless window-masked; clarified that dynamic oscilloscopes require SPC700 mailbox telemetry (cannot read S-DSP `VxOUTX` directly); clarified that hardware sprites use CGRAM colors 128–255 (OBJ palettes 0–7) distinct from BG palettes 0–7.

@@ -13,6 +13,9 @@ tools/emu/cores/
 samples/*
 !samples/README.md
 soundfonts/*
+soundfonts/**
+*.sf2
+*.SF2
 !soundfonts/README.md
 factory/*.sndjfact
 !factory/factory.sndjfact
