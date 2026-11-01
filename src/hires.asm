@@ -152,6 +152,7 @@ hr_enter:
     bpl @tab
     sep #$20
 .ACCU 8
+    stz.w hr_sb_valid       ; status bar: redraw on first frame
     lda #$FE
     sta hr_lastch           ; chain panel: redraw on first frame
     lda #$01
@@ -718,6 +719,359 @@ opt_hires_edit:
     sta.l $70000D
 @done:
     rtl
+
+; --- hi-res status bar (SONG and FRAME, row 1) -------------------------------
+; Shows: song name (8 chars), tempo (decimal 3 digits, 0->150),
+; transport state (PLAY in ATTR_PLAY, WAIT in ATTR_ACCENT, STOP in ATTR_DIM),
+; and ARAM used / free (matching echoscr.asm: used = res_cursor - $1200,
+; free = echo floor - res_cursor).
+; SONG: starts at x=6, FRAME: starts at x=21.
+; Free space x59-63 preserved for tick counter / chrome.
+; Redraws only when one of the displayed values or ui_mode changes.
+hr_status_bar:
+    lda ui_mode
+    cmp #SCREEN_SONG
+    beq +
+    cmp #SCREEN_FRAME
+    beq +
+    rtl
++
+    lda.w hr_sb_valid
+    beq @dirty
+    lda ui_mode
+    cmp.w hr_sb_mode
+    bne @dirty
+    lda eng_playing
+    cmp.w hr_sb_play
+    bne @dirty
+    lda sync_wait
+    cmp.w hr_sb_wait
+    bne @dirty
+    lda.l $7E0000 + SB_HEADER + SH_BPM
+    cmp.w hr_sb_bpm
+    bne @dirty
+    lda.l $7E0000 + SB_HEADER + SH_EDL
+    cmp.w hr_sb_edl
+    bne @dirty
+    rep #$20
+.ACCU 16
+    lda res_cursor
+    cmp.w hr_sb_cursor
+    bne @dirty16
+    lda.l $7E0000 + SB_HEADER + SH_NAME
+    cmp.w hr_sb_name
+    bne @dirty16
+    lda.l $7E0000 + SB_HEADER + SH_NAME + 2
+    cmp.w hr_sb_name + 2
+    bne @dirty16
+    lda.l $7E0000 + SB_HEADER + SH_NAME + 4
+    cmp.w hr_sb_name + 4
+    bne @dirty16
+    lda.l $7E0000 + SB_HEADER + SH_NAME + 6
+    cmp.w hr_sb_name + 6
+    bne @dirty16
+    sep #$20
+.ACCU 8
+    rtl
+
+@dirty16:
+    sep #$20
+.ACCU 8
+@dirty:
+    ; snapshot
+    lda ui_mode
+    sta.w hr_sb_mode
+    lda eng_playing
+    sta.w hr_sb_play
+    lda sync_wait
+    sta.w hr_sb_wait
+    lda.l $7E0000 + SB_HEADER + SH_BPM
+    sta.w hr_sb_bpm
+    lda.l $7E0000 + SB_HEADER + SH_EDL
+    sta.w hr_sb_edl
+    rep #$20
+.ACCU 16
+    lda res_cursor
+    sta.w hr_sb_cursor
+    lda.l $7E0000 + SB_HEADER + SH_NAME
+    sta.w hr_sb_name
+    lda.l $7E0000 + SB_HEADER + SH_NAME + 2
+    sta.w hr_sb_name + 2
+    lda.l $7E0000 + SB_HEADER + SH_NAME + 4
+    sta.w hr_sb_name + 4
+    lda.l $7E0000 + SB_HEADER + SH_NAME + 6
+    sta.w hr_sb_name + 6
+    sep #$20
+.ACCU 8
+    lda #$01
+    sta.w hr_sb_valid
+
+    ; coordinates: y=1, x=6 (SONG) or x=21 (FRAME)
+    lda #1
+    sta text_y
+    lda ui_mode
+    cmp #SCREEN_FRAME
+    beq +
+    lda #6
+    bra ++
++
+    lda #21
+++
+    sta text_x
+
+    ; 1. Song name (8 chars, ATTR_TEXT)
+    rep #$20
+.ACCU 16
+    lda #ATTR_TEXT
+    jsr hr_attr
+.ACCU 8
+    ldy #0
+@name_loop:
+    tyx
+    lda.l $7E0000 + SB_HEADER + SH_NAME,x
+    cmp #' '
+    bcs +
+    lda #' '
++
+    sec
+    sbc #32
+    jsr hr_put
+    iny
+    cpy #8
+    bne @name_loop
+
+    ; 1 space
+    lda #0
+    jsr hr_put
+
+    ; 2. Tempo (3 digits, ATTR_TEXT)
+    lda.l $7E0000 + SB_HEADER + SH_BPM
+    bne +
+    lda #150
++
+    jsr hr_dec3
+
+    ; 1 space
+    lda #0
+    jsr hr_put
+
+    ; 3. Play state (4 chars: PLAY / WAIT / STOP)
+    lda eng_playing
+    beq @st_stop
+    lda sync_wait
+    bne @st_wait
+    rep #$20
+.ACCU 16
+    lda #ATTR_PLAY
+    jsr hr_attr
+.ACCU 8
+    ldx #str_hr_play
+    jsr hr_s
+    bra @st_done
+@st_wait:
+    rep #$20
+.ACCU 16
+    lda #ATTR_ACCENT
+    jsr hr_attr
+.ACCU 8
+    ldx #str_hr_wait
+    jsr hr_s
+    bra @st_done
+@st_stop:
+    rep #$20
+.ACCU 16
+    lda #ATTR_DIM
+    jsr hr_attr
+.ACCU 8
+    ldx #str_hr_stop
+    jsr hr_s
+@st_done:
+
+    ; 1 space
+    rep #$20
+.ACCU 16
+    lda #ATTR_DIM
+    jsr hr_attr
+.ACCU 8
+    lda #0
+    jsr hr_put
+
+    ; 4. ARAM used / free (ATTR_DIM)
+    ldx #str_hr_ram
+    jsr hr_s
+
+    ; used = res_cursor - $1200
+    rep #$30
+.ACCU 16
+    lda res_cursor
+    sec
+    sbc #$1200
+    sta tmp0
+    sep #$20
+.ACCU 8
+    jsr hr_fl_kb
+
+    lda ui_mode
+    cmp #SCREEN_FRAME
+    beq @f_frame
+    ldx #str_hr_free
+    jsr hr_s
+    bra @calc_free
+@f_frame:
+    ldx #str_hr_ffree
+    jsr hr_s
+
+@calc_free:
+    ; free = echo floor - resident end; floor page = $100 - 8*EDL
+    lda.l $7E0000 + SB_HEADER + SH_EDL
+    and #$0F
+    asl
+    asl
+    asl
+    eor #$FF
+    inc a
+    bne @floor_ok
+    lda #$FF
+@floor_ok:
+    rep #$30
+.ACCU 16
+    and #$00FF
+    xba                     ; floor page -> byte address
+    sec
+    sbc res_cursor
+    bcs @free_ok
+    lda #$0000
+@free_ok:
+    sta tmp0
+    sep #$20
+.ACCU 8
+    jsr hr_fl_kb
+
+    rtl
+
+; print A (0-255) as 3 decimal digits via hr_put
+hr_dec3:
+    ldx #0
+@h:
+    cmp #100
+    bcc @h_done
+    sec
+    sbc #100
+    inx
+    bra @h
+@h_done:
+    pha
+    txa
+    clc
+    adc #'0' - 32
+    jsr hr_put
+    pla
+    ldx #0
+@t:
+    cmp #10
+    bcc @t_done
+    sec
+    sbc #10
+    inx
+    bra @t
+@t_done:
+    pha
+    txa
+    clc
+    adc #'0' - 32
+    jsr hr_put
+    pla
+    clc
+    adc #'0' - 32
+    jmp hr_put
+
+; print tmp0 (16-bit bytes) as "NN.NK" via hr_put (5 chars)
+hr_fl_kb:
+    rep #$30
+.ACCU 16
+    lda tmp0
+    and #$03FF
+    sta tmp2
+    lda tmp0
+    lsr
+    lsr
+    lsr
+    lsr
+    lsr
+    lsr
+    lsr
+    lsr
+    lsr
+    lsr                     ; whole KB (0-31)
+    sta tmp0
+    sep #$20
+.ACCU 8
+    lda tmp0
+    ldy #$0000
+@tens:
+    cmp #10
+    bcc @tens_done
+    sec
+    sbc #10
+    iny
+    bra @tens
+@tens_done:
+    pha
+    rep #$30
+.ACCU 16
+    tya
+    sep #$20
+.ACCU 8
+    beq @no_tens
+    clc
+    adc #'0' - 32
+    jsr hr_put
+    bra @unit
+@no_tens:
+    lda #0                  ; tile 0 = space
+    jsr hr_put
+@unit:
+    pla
+    clc
+    adc #'0' - 32
+    jsr hr_put
+    lda #'.' - 32
+    jsr hr_put
+    ; decimal = (rem * 10) >> 10
+    rep #$30
+.ACCU 16
+    lda tmp2
+    asl
+    asl
+    asl
+    clc
+    adc tmp2
+    clc
+    adc tmp2                ; * 10
+    lsr
+    lsr
+    lsr
+    lsr
+    lsr
+    lsr
+    lsr
+    lsr
+    lsr
+    lsr
+    sep #$20
+.ACCU 8
+    clc
+    adc #'0' - 32
+    jsr hr_put
+    lda #'K' - 32
+    jmp hr_put
+
+str_hr_play:  .DB "PLAY", 0
+str_hr_wait:  .DB "WAIT", 0
+str_hr_stop:  .DB "STOP", 0
+str_hr_ram:   .DB "RAM ", 0
+str_hr_free:  .DB " FREE ", 0
+str_hr_ffree: .DB " F ", 0
 
 ; value cell: text_x/y/attr already set by options_draw (classic screen)
 opt_hires_draw:

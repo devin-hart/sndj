@@ -346,6 +346,14 @@ fr_cnt       db      ; FRAME draw: loop counter
 fr_cnt2      db      ; FRAME draw: inner loop counter
 fr_ph        ds 8    ; FRAME: each track's phrase at this position ($FF none)
 hr_lastch    db      ; hi-res SONG: chain id the panel shows ($FE = none yet)
+hr_sb_valid  db      ; hi-res status bar: 1 = cache valid
+hr_sb_mode   db      ; last screen status bar was drawn for
+hr_sb_name   ds 8    ; cached song name (8 bytes)
+hr_sb_bpm    db      ; cached SH_BPM
+hr_sb_play   db      ; cached eng_playing
+hr_sb_wait   db      ; cached sync_wait
+hr_sb_cursor dw      ; cached res_cursor
+hr_sb_edl    db      ; cached SH_EDL
 .ENDE
 
 ; Shadow of the BG3 tilemap (32x32 words). NMI DMAs this to VRAM every frame;

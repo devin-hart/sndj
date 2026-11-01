@@ -175,7 +175,8 @@ draw_status:
     beq @have_str
     ldx #str_wait
 @have_str:
-    jmp text_puts
+    jsr text_puts
+    bra @hr_sb
 @stopped:
     rep #$20
 .ACCU 16
@@ -184,7 +185,13 @@ draw_status:
     sep #$20
 .ACCU 8
     ldx #str_stop
-    jmp text_puts
+    jsr text_puts
+@hr_sb:
+    lda ui_hires
+    beq @done
+    jsl hr_status_bar
+@done:
+    rts
 
 str_apu_bad: .DB "APU?", 0
 str_play:    .DB "PLAY", 0

@@ -324,6 +324,8 @@ hint_tick:
     sta hint_ctr
     sep #$20
 .ACCU 8
+    lda ui_hires
+    bne @done
     lda ui_mode
     cmp #SCREEN_SONG
     bne @done
