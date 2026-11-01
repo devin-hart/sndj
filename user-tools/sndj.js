@@ -1255,7 +1255,7 @@ function seqNew(block, pool, opts) {
       pending: 0xFF, playcnt: 0, mute: false,
       tbl: 0xFF, tblSpd: 0, tblCnt: 0, tblRow: 0,
       retPer: 0, retCnt: 0, slRate: 0, slNote: 0, slT: 0,
-      arpPh: 0, vib: 0, vibPh: 0, trm: 0, trmPh: 0,
+      arpPh: 0, vib: 0, vibPh: 0, trm: 0, trmPh: 0, trmCmd: 0xFF,
       voll: 0, volr: 0, fine: 0, chord: 0,
     });
   }
@@ -1399,11 +1399,19 @@ function seqTunePool(seq, poolIdx, extraFine) {
 function seqTuneLoad(seq, id) {
   const r = SEQ_SB.INSTR + id * 16, b = seq.block;
   const fine = i8(b[r + 6]), type = b[r] & 0x07;
-  if (type === 0 || type === 3 || type === 4) seqTunePool(seq, b[r + 1] & 0x3F, fine);
-  else if (type === 2) {                // WAV: +1 semi, -52 fine (8-bit wrap)
-    seq.trig.semis = 1;
+  const tune = b[r + 9];                // TUNE: signed coarse semitones
+  if (type === 0) {                     // SMP: pool tune + TUNE
+    seqTunePool(seq, b[r + 1] & 0x3F, fine);
+    seq.trig.semis = i8((seq.trig.semis + tune) & 0xFF);
+  } else if (type === 3 || type === 4) {  // NSE / SLICE (TUNE in slice trigger)
+    seqTunePool(seq, b[r + 1] & 0x3F, fine);
+  } else if (type === 2) {              // WAV: +1 semi + TUNE, -52 fine (8-bit wrap)
+    seq.trig.semis = i8((1 + tune) & 0xFF);
     seq.trig.fine = i8((fine - 52) & 0xFF);
-  } else {                              // KIT (slot tune at trigger) / KARP
+  } else if (type === 5) {              // KARP: TUNE selects the partial
+    seq.trig.semis = i8(tune);
+    seq.trig.fine = 0;
+  } else {                              // KIT (slot tune at trigger)
     seq.trig.semis = 0;
     seq.trig.fine = fine;
   }
@@ -1525,7 +1533,11 @@ function seqKarpTrigger(seq) {
   const g = seq.trig, b = seq.block, W = (r, v) => dspWrite(seq.dsp, r, v);
   const r = SEQ_SB.INSTR + g.id * 16;
   const edl = b[SEQ_SB.HEADER + SEQ_SH.EDL] & 0x0F;
-  const tab = karpEntry(g.note, edl === 2 ? 2 : 1);
+  // karp_trigger: clamp(note + TUNE); an 8-bit result with bit 7 set reads as 0
+  let kn = (g.note + g.semis) & 0xFF;
+  if (kn & 0x80) kn = 0;
+  else if (kn >= SEQ_NOTE_MAX) kn = SEQ_NOTE_MAX - 1;
+  const tab = karpEntry(kn, edl === 2 ? 2 : 1);
   const damp = b[r + 2] & 0x0F;
   W(g.voice * 16 + 4, 56 + (b[r + 1] & 0x07));      // exciter wave bank
   W(0x0D, b[r + 3] & 0x7F);                         // feedback = SUSTAIN
@@ -1557,6 +1569,7 @@ function seqTriggerNote(seq, t, rawNote) {
     const r = SEQ_SB.INSTR + g.id * 16;
     trk.vib = b[r + 14];
     trk.trm = b[r + 15];
+    if (trk.trmCmd !== 0xFF) trk.trm = trk.trmCmd;  // W override survives re-triggers
     trk.vibPh = 0;
     trk.trmPh = 0;
     const tbl = b[r + 12], tbs = b[r + 13] & 0x0F;
@@ -1762,6 +1775,17 @@ function seqCmdPost(seq, t) {
   const trk = seq.tracks[t];
   switch (trk.cmd) {
     case 22: trk.vib = trk.cval; break;               // V: vibrato override
+    case 23: {                                        // W: tremolo override
+      if (trk.cval) {
+        trk.trmCmd = trk.cval;                        // latched for later notes
+        trk.trm = trk.cval;
+      } else {
+        trk.trmCmd = 0xFF;                            // W00: back to instrument TRM
+        trk.trm = 0;
+        seqFxTrm(seq, t);                             // restore undipped volume now
+      }
+      break;
+    }
     case 24: {                                        // X: volume/accent
       trk.voll = trk.cval & 0x7F;
       trk.volr = trk.cval & 0x7F;
@@ -1923,7 +1947,8 @@ function seqTrackTable(seq, t) {
   }
   const tsp = b[o + 1];
   if (tsp) {                            // TSP: semitones off the playing note
-    let n = (trk.note + i8(tsp)) & 0xFF;
+    // $80 is the explicit "TSP 00" (reset to the note base), not -128
+    let n = (trk.note + (tsp === 0x80 ? 0 : i8(tsp))) & 0xFF;
     if (n >= SEQ_NOTE_MAX) n = SEQ_NOTE_MAX - 1;
     const id = trk.instr;
     if (id !== 0xFF && (b[SEQ_SB.INSTR + id * 16] & 0x07) === 4) {
