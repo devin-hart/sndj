@@ -354,6 +354,8 @@ hr_sb_play   db      ; cached eng_playing
 hr_sb_wait   db      ; cached sync_wait
 hr_sb_cursor dw      ; cached res_cursor
 hr_sb_edl    db      ; cached SH_EDL
+hr_meter_lvl ds 8    ; cached level meters (quantised level 0-4 per voice)
+hr_meter_scr db      ; last screen level meters were drawn for ($FF = invalid)
 .ENDE
 
 ; Shadow of the BG3 tilemap (32x32 words). NMI DMAs this to VRAM every frame;

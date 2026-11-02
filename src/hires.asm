@@ -155,6 +155,8 @@ hr_enter:
     stz.w hr_sb_valid       ; status bar: redraw on first frame
     lda #$FE
     sta hr_lastch           ; chain panel: redraw on first frame
+    lda #$FF
+    sta.w hr_meter_scr      ; level meters: redraw on first frame
     lda #$01
     sta hr_paldirty
     lda #32
@@ -629,6 +631,36 @@ song_hr_draw:
 +
     jsr hr_x2
 @steps:
+    stz tmp0                ; preview_step = 0 default
+    lda tmp2                ; chain id ($FF if none)
+    cmp #$FF
+    beq @do_steps
+    lda chain_cy
+    cmp #16
+    bcs @do_steps
+    rep #$30
+.ACCU 16
+    and #$00FF
+    asl                     ; chain_cy * 2
+    sta tmp1
+    lda tmp2
+    and #$00FF
+    asl
+    asl
+    asl
+    asl
+    asl                     ; chain * 32
+    clc
+    adc tmp1
+    tax
+    sep #$20
+.ACCU 8
+    lda.l $7E0000 + SB_CHAINS,x
+    cmp #$FF
+    beq @do_steps
+    lda chain_cy
+    sta tmp0                ; preview_step = chain_cy
+@do_steps:
     stz tmp0 + 1
 @step:
     lda tmp0 + 1
@@ -640,6 +672,15 @@ song_hr_draw:
     rep #$20
 .ACCU 16
     lda #ATTR_DIM
+    sep #$20
+.ACCU 8
+    lda tmp0 + 1
+    cmp tmp0                ; step == preview_step?
+    bne +
+    rep #$20
+.ACCU 16
+    lda #ATTR_HILITE
++
     jsr hr_attr
 .ACCU 8
     lda tmp0 + 1
@@ -719,18 +760,17 @@ song_hr_draw:
     ; --- phrase preview panel (x47..58) ---
     lda tmp2                ; chain id ($FF if none)
     cmp #$FF
-    bne @ph_find_phrase
+    bne +
     lda #$FF
     sta tmp2 + 1            ; no chain -> no phrase ($FF)
     bra @ph_hdr
-@ph_find_phrase:
-    lda chain_cy
-    cmp #16
-    bcs @ph_try_step0
++
+    ; Look up phrase at preview_step (tmp0)
     rep #$30
 .ACCU 16
+    lda tmp0
     and #$00FF
-    asl                     ; chain_cy * 2
+    asl                     ; step * 2
     sta tmp1
     lda tmp2
     and #$00FF
@@ -745,23 +785,6 @@ song_hr_draw:
     sep #$20
 .ACCU 8
     lda.l $7E0000 + SB_CHAINS,x
-    cmp #$FF
-    bne @ph_got_phrase
-@ph_try_step0:
-    rep #$30
-.ACCU 16
-    lda tmp2
-    and #$00FF
-    asl
-    asl
-    asl
-    asl
-    asl                     ; chain * 32
-    tax
-    sep #$20
-.ACCU 8
-    lda.l $7E0000 + SB_CHAINS,x
-@ph_got_phrase:
     sta tmp2 + 1            ; phrase id ($FF if none)
 
 @ph_hdr:
@@ -978,6 +1001,7 @@ hr_status_bar:
     beq +
     rtl
 +
+    jsr hr_meters
     lda.w hr_sb_valid
     beq @dirty
     lda ui_mode
@@ -1356,6 +1380,127 @@ hr_tab_rom:
     .DW $3401, $3400             ; 5 GREEN
     .DW $3801, $3800             ; 6 CYAN
     .DW $3C01, $3C00             ; 7 PINK
+
+
+; --- level meters (hi-res SONG and FRAME, row 4) -----------------------------
+; Draws 1-cell meter per voice (tracks 0-7) using GLYPH_BLOCK14/12/34/BLOCK
+; in ATTR_GREEN. Redraws only meters whose quantised level (0-4) changed.
+; Hi-res SONG: y=4, x = 5 + t*4 (under each track number)
+; Hi-res FRAME: y=4, x = 7 + t*7 (cell after phrase id)
+song_meter_x: .DB 5, 9, 13, 17, 21, 25, 29, 33
+fr_meter_x:   .DB 7, 14, 21, 28, 35, 42, 49, 56
+meter_glyphs: .DB 0, GLYPH_BLOCK14, GLYPH_BLOCK12, GLYPH_BLOCK34, GLYPH_BLOCK
+
+hr_meters:
+    lda ui_mode
+    cmp #SCREEN_SONG
+    beq @screen_ok
+    cmp #SCREEN_FRAME
+    beq @screen_ok
+    lda #$FF
+    sta.w hr_meter_scr
+    rts
+@screen_ok:
+    cmp.w hr_meter_scr
+    beq @check_full
+    ; screen changed: invalidate all 8 meter levels
+    sta.w hr_meter_scr
+    ldx #7
+-
+    lda #$FF
+    sta.w hr_meter_lvl,x
+    dex
+    bpl -
+@check_full:
+    ; On FRAME, if full redraw was requested, invalidate all meters
+    lda ui_mode
+    cmp #SCREEN_FRAME
+    bne @do_meters
+    lda fr_full
+    beq +
+    ldx #7
+-
+    lda #$FF
+    sta.w hr_meter_lvl,x
+    dex
+    bpl -
++
+    ; If cursor moved on FRAME, invalidate fr_t and fr_oldtrk
+    rep #$20
+.ACCU 16
+    lda fr_input
+    sep #$20
+.ACCU 8
+    beq @do_meters
+    ldx fr_t
+    lda #$FF
+    sta.w hr_meter_lvl,x
+    ldx fr_oldtrk
+    sta.w hr_meter_lvl,x
+
+@do_meters:
+    stz tmp0                ; track counter t = 0..7
+@loop:
+    ldx tmp0
+    lda eng_playing
+    beq @lvl_zero
+    lda.w envx_mirror,x
+    beq @lvl_zero
+    lsr
+    lsr
+    lsr
+    lsr
+    lsr                     ; 0..3 (1..31 -> 0, 32..63 -> 1, 64..95 -> 2, 96..127 -> 3)
+    inc a                   ; 1..4
+    bra @got_lvl
+@lvl_zero:
+    lda #0
+@got_lvl:
+    cmp.w hr_meter_lvl,x
+    beq @next
+    sta.w hr_meter_lvl,x
+
+    ; Look up glyph for new level (0..4)
+    rep #$30
+.ACCU 16
+    and #$00FF
+    tax
+    sep #$20
+.ACCU 8
+    lda.l meter_glyphs,x
+    pha                     ; save glyph on stack
+
+    ; Position: text_y = 4, text_x from table
+    lda #4
+    sta text_y
+    ldx tmp0
+    lda ui_mode
+    cmp #SCREEN_SONG
+    bne +
+    lda.l song_meter_x,x
+    bra ++
++
+    lda.l fr_meter_x,x
+++
+    sta text_x
+
+    ; Attribute: ATTR_GREEN
+    rep #$20
+.ACCU 16
+    lda #ATTR_GREEN
+    jsr hr_attr
+.ACCU 8
+
+    ; Draw glyph
+    pla                     ; restore glyph
+    jsr hr_put
+
+@next:
+    inc tmp0
+    lda tmp0
+    cmp #TRACKS
+    bne @loop
+    rts
 
 hr_pal:
     .INCBIN "hrpal.bin"
