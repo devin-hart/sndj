@@ -61,7 +61,12 @@ hr_boot:
     sta BG2SC
     lda #((VRAM_HR_BG2_CHR >> 12) << 4) | (VRAM_HR_BG1_CHR >> 12)
     sta BG12NBA
-    ; OPTIONS HI-RES from the SRAM header (anything but 1 = off)
+    ; UI rewrite: hi-res only. opt_hires stays 1 (FRAME/SONG/INSTR still
+    ; test it); the OPTIONS field no longer changes it.
+    lda #$01
+    sta opt_hires
+    rtl
+    ; (old: OPTIONS HI-RES from the SRAM header, anything but 1 = off)
     stz opt_hires
     lda.l $700000
     cmp #'S'
@@ -964,6 +969,7 @@ str_hr_blank12: .DB "            ", 0
 
 ; --- OPTIONS HI-RES (field 7): B + left/right toggles, persists at $000D ---
 opt_hires_edit:
+    rtl                     ; hi-res only now: the field is display-only
     rep #$20
 .ACCU 16
     lda pad_event

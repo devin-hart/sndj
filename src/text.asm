@@ -6,7 +6,16 @@
 .INDEX 16
 
 ; Fill the whole shadow map with spaces (palette 0, priority).
+; UI rewrite (hi-res only): every screen but the splash runs on the Mode 5
+; 64-column layer, so a clear also (re)enters hi-res; the splash keeps the
+; classic Mode 1 path (its wordmark is BG3 tiles).
 text_clear:
+    lda ui_mode
+    beq @classic
+    jsr @fill
+    jsl hr_enter
+    rts
+@classic:
     lda ui_hires
     beq +
     stz ui_hires            ; back to Mode 1: the NMI restores the classic
@@ -15,6 +24,7 @@ text_clear:
     lda #$01
     sta pal_dirty
 +
+@fill:
     rep #$30
 .ACCU 16
     lda #ATTR_TEXT          ; tile 0 = space
