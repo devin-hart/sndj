@@ -96,9 +96,6 @@ local plan = {
     poke(SB_PHRASES + 14, 26)  -- Z
     poke(SB_PHRASES + 15, 1)
 
-    -- Ensure classic mode initially (opt_hires = 0)
-    poke(0x0D8D, 0)
-
     -- Navigate SONG -> CHAIN -> PHRASE -> FRAME
     pad = { a = true }
   end},
@@ -110,78 +107,11 @@ local plan = {
   {36, function() pad = { x = true } end},
   {38, function() pad = {} end},
 
-  -- 2. Classic FRAME screen: cursor on Row 0
+  -- 2. Hi-Res FRAME screen: cursor on Row 0 (Cmd V)
   {50, function()
     check(wram(0x000C) == 16, "on FRAME screen (ui_mode " .. wram(0x000C) .. ")")
-    check((wram(0x0D66) & 0x80) == 0, "FRAME is in classic mode")
-
-    -- Check Row 22 has V34
-    local info22 = get_str(0, 22, 26)
-    check(info22:find("V34") ~= nil, "Classic row 22 has V34: '" .. info22 .. "'")
-
-    -- Check Row 23 has VIB SPEED X DEPTH Y
-    local help23 = get_str(0, 23, 19)
-    check(help23 == "VIB SPEED X DEPTH Y", "Classic row 23 Cmd V help: '" .. help23 .. "'")
-
-    -- Navigate down to Row 1 (Cmd A)
-    pad = { down = true }
-  end},
-  {52, function() pad = {} end},
-
-  -- 3. Classic FRAME screen: cursor on Row 1 (Cmd A)
-  {60, function()
-    local help23 = get_str(0, 23, 16)
-    check(help23 == "CYCLE ROOT +X +Y", "Classic row 23 Cmd A help: '" .. help23 .. "'")
-
-    -- Navigate down to Row 2 (Cmd 0: empty)
-    pad = { down = true }
-  end},
-  {62, function() pad = {} end},
-
-  -- 4. Classic FRAME screen: cursor on Row 2 (Cmd 0: empty)
-  {70, function()
-    local help23 = get_str(0, 23, 32)
-    check(help23 == string.rep(" ", 32), "Classic row 23 cleared on empty command")
-
-    -- Navigate down to Row 3 (Cmd Z)
-    pad = { down = true }
-  end},
-  {72, function() pad = {} end},
-
-  -- 5. Classic FRAME screen: cursor on Row 3 (Cmd Z)
-  {80, function()
-    local help23 = get_str(0, 23, 18)
-    check(help23 == "PMOD BY LEFT VOICE", "Classic row 23 Cmd Z help: '" .. help23 .. "'")
-
-    -- Now switch to HI-RES mode
-    poke(0x0D8D, 1)          -- opt_hires = 1
-    -- Re-enter FRAME to activate hi-res
-    pad = { x = true }       -- exit to PHRASE
-  end},
-  {82, function() pad = {} end},
-  {90, function()
-    -- Re-enter FRAME from PHRASE
-    pad = { x = true }
-  end},
-  {92, function() pad = {} end},
-
-  -- 6. Hi-Res FRAME screen: cursor on Row 0 (Cmd V)
-  {110, function()
-    check(wram(0x000C) == 16, "back on FRAME screen (ui_mode " .. wram(0x000C) .. ")")
     check((wram(0x0D66) & 0x80) ~= 0, "FRAME is in hi-res mode")
 
-    -- In hi-res, command help is on Row 22 after V34
-    -- Move cursor back to Row 0 (UP x 3)
-    pad = { up = true }
-  end},
-  {112, function() pad = {} end},
-  {114, function() pad = { up = true } end},
-  {116, function() pad = {} end},
-  {118, function() pad = { up = true } end},
-  {120, function() pad = {} end},
-
-  -- 7. Hi-Res FRAME screen: Row 0 checks
-  {130, function()
     local row22 = get_str(0, 22, 64)
     check(row22:find("V34", 1, true) ~= nil, "Hi-res row 22 contains V34: '" .. row22:sub(1, 30) .. "'")
     check(row22:find("VIB SPEED X DEPTH Y", 1, true) ~= nil, "Hi-res row 22 contains 'VIB SPEED X DEPTH Y'")
@@ -191,36 +121,36 @@ local plan = {
     local tail = row22:sub(vpos + 19)
     check(tail == string.rep(" ", #tail), "Hi-res row 22 trailing columns are cleared")
 
-    -- Move down to Row 1 (Cmd A)
+    -- Navigate down to Row 1 (Cmd A)
     pad = { down = true }
   end},
-  {132, function() pad = {} end},
+  {52, function() pad = {} end},
 
-  -- 8. Hi-Res FRAME screen: Row 1 checks (Cmd A)
-  {140, function()
+  -- 3. Hi-Res FRAME screen: cursor on Row 1 (Cmd A)
+  {60, function()
     local row22 = get_str(0, 22, 64)
     check(row22:find("CYCLE ROOT +X +Y", 1, true) ~= nil, "Hi-res row 22 contains 'CYCLE ROOT +X +Y'")
 
-    -- Move down to Row 2 (Cmd 0: empty)
+    -- Navigate down to Row 2 (Cmd 0: empty)
     pad = { down = true }
   end},
-  {142, function() pad = {} end},
+  {62, function() pad = {} end},
 
-  -- 9. Hi-Res FRAME screen: Row 2 checks (Cmd 0: empty)
-  {150, function()
+  -- 4. Hi-Res FRAME screen: cursor on Row 2 (Cmd 0: empty)
+  {70, function()
     local row22 = get_str(0, 22, 64)
     local nocmd_pos = row22:find("%-%-%-")
     check(nocmd_pos ~= nil, "Hi-res row 22 shows '---' for empty command")
     local tail = row22:sub(nocmd_pos + 4)
     check(tail == string.rep(" ", #tail), "Hi-res row 22 cleared after '---' on empty command")
 
-    -- Move down to Row 3 (Cmd Z)
+    -- Navigate down to Row 3 (Cmd Z)
     pad = { down = true }
   end},
-  {152, function() pad = {} end},
+  {72, function() pad = {} end},
 
-  -- 10. Hi-Res FRAME screen: Row 3 checks (Cmd Z)
-  {160, function()
+  -- 5. Hi-Res FRAME screen: cursor on Row 3 (Cmd Z)
+  {80, function()
     local row22 = get_str(0, 22, 64)
     check(row22:find("PMOD BY LEFT VOICE", 1, true) ~= nil, "Hi-res row 22 contains 'PMOD BY LEFT VOICE'")
 

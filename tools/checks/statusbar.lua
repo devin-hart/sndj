@@ -16,8 +16,6 @@ emu.addEventCallback(function() emu.setInput(pad, 0) end, emu.eventType.inputPol
 
 -- Save original SRAM $000D so we can restore it on exit
 local orig_sram = emu.read(0x000D, S)
--- Start with HI-RES OFF in SRAM
-emu.write(0x000D, 0, S)
 
 local function finish(code)
   if orig_sram ~= nil then
@@ -62,30 +60,14 @@ local function compute_fl_kb(bytes)
 end
 
 local plan = {
-  -- 1. Boot onto classic SONG. Verify classic mode has no status bar on row 1
+  -- 1. Boot onto hi-res SONG.
   {20, function()
     check(wram(0x000C) == 3, "SONG screen active (ui_mode " .. wram(0x000C) .. ")")
-    check(wram(0x0D66) == 0, "SONG starts in classic mode (ui_hires == 0)")
+    check(wram(0x0D66) == 0x80, "SONG is in hi-res mode (ui_hires == 128)")
     -- Seed chain 0 at track 0 row 0, and phrase 0 at step 0 so we can navigate to CHAIN/PHRASE/FRAME
     poke(0x2000, 0)
     poke(0x3700, 0)
-  end},
 
-  -- 2. Turn on HI-RES by poking opt_hires = 1 and re-entering SONG via OPTIONS
-  {24, function() poke(0x0D8D, 1); pad = { a = true } end},
-  {26, function() pad = { a = true, up = true } end},
-  {28, function() pad = {} end},
-  {34, function()
-    check(wram(0x000C) == 10, "on OPTIONS screen (ui_mode " .. wram(0x000C) .. ")")
-    pad = { a = true }
-  end},
-  {36, function() pad = { a = true, down = true } end},
-  {38, function() pad = {} end},
-
-  -- 3. Now on hi-res SONG (stopped)
-  {45, function()
-    check(wram(0x000C) == 3, "back on SONG screen (ui_mode " .. wram(0x000C) .. ")")
-    check(wram(0x0D66) == 0x80, "SONG is in hi-res mode (ui_hires == 128)")
     local title = hr_str(0, 1, 4)
     check(title == "SONG", "SONG title: '" .. title .. "'")
     local name = hr_str(6, 1, 8)
@@ -115,36 +97,36 @@ local plan = {
     check(free_act == free_str, "SONG ARAM free: '" .. free_act .. "' == '" .. free_str .. "'")
   end},
 
-  -- 4. Start playback: verify STOP -> PLAY
-  {48, function() pad = { start = true } end},
-  {50, function() pad = {} end},
-  {55, function()
+  -- 2. Start playback: verify STOP -> PLAY
+  {24, function() pad = { start = true } end},
+  {26, function() pad = {} end},
+  {31, function()
     local play = hr_str(20, 1, 4)
     check(play == "PLAY", "SONG status bar state playing: '" .. play .. "'")
   end},
 
-  -- 5. Stop playback before navigating
-  {58, function() pad = { start = true } end},
-  {60, function() pad = {} end},
+  -- 3. Stop playback before navigating
+  {34, function() pad = { start = true } end},
+  {36, function() pad = {} end},
 
-  -- 6. Navigate to FRAME: SONG -> CHAIN (A+RIGHT) -> PHRASE (A+RIGHT) -> FRAME (X)
-  {66, function() pad = { a = true } end},
-  {69, function() pad = { a = true, right = true } end},
-  {72, function() pad = {} end},
-  {78, function()
+  -- 4. Navigate to FRAME: SONG -> CHAIN (A+RIGHT) -> PHRASE (A+RIGHT) -> FRAME (X)
+  {42, function() pad = { a = true } end},
+  {45, function() pad = { a = true, right = true } end},
+  {48, function() pad = {} end},
+  {54, function()
     check(wram(0x000C) == 2, "on CHAIN screen (ui_mode " .. wram(0x000C) .. ")")
     pad = { a = true }
   end},
-  {81, function() pad = { a = true, right = true } end},
-  {84, function() pad = {} end},
-  {90, function()
+  {57, function() pad = { a = true, right = true } end},
+  {60, function() pad = {} end},
+  {66, function()
     check(wram(0x000C) == 1, "on PHRASE screen (ui_mode " .. wram(0x000C) .. ")")
     pad = { x = true }
   end},
-  {92, function() pad = {} end},
+  {68, function() pad = {} end},
 
-  -- 7. Verify FRAME status bar
-  {105, function()
+  -- 5. Verify FRAME status bar
+  {80, function()
     check(wram(0x000C) == 16, "on FRAME screen (ui_mode " .. wram(0x000C) .. ")")
     local fr_title = hr_str(0, 1, 5)
     check(fr_title == "FRAME", "FRAME title: '" .. fr_title .. "'")

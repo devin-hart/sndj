@@ -153,33 +153,22 @@ local plan = {
     pad = { x = true }
   end},
   {133, function() pad = {} end},
-  {140, function() pad = { a = true } end}, {143, function() pad = { a = true, left = true } end}, {146, function() pad = {} end},
+  {136, function()
+    check(wram(UI_MODE) == 1, "back on PHRASE screen (ui_mode 1)")
+    phrase_cgdata_start = cgdata_writes
+  end},
+  {140, function()
+    local writes_on_phrase = cgdata_writes - phrase_cgdata_start
+    check(writes_on_phrase == 0, "HDMA is disabled on PHRASE (0 writes)")
+    pad = { a = true }
+  end},
+  {143, function() pad = { a = true, left = true } end}, {146, function() pad = {} end},
   {152, function() pad = { a = true } end}, {155, function() pad = { a = true, left = true } end}, {158, function() pad = {} end},
 
   -- 6. Back on SONG screen in hi-res
   {170, function()
     check(wram(UI_MODE) == 3, "back on SONG screen (ui_mode 3)")
-
-    -- Switch to classic Mode 1 via OPTIONS
-    poke(OPT_HIRES, 0)
-    pad = { a = true }
-  end},
-  {173, function() pad = { a = true, up = true } end}, {176, function() pad = {} end},
-  {184, function()
-    check(wram(UI_MODE) == 10, "on OPTIONS screen (ui_mode 10)")
-    pad = { a = true }
-  end},
-  {187, function() pad = { a = true, down = true } end}, {190, function() pad = {} end},
-
-  -- 7. Classic Mode 1 on SONG screen: HDMA must be off
-  {205, function()
-    check(wram(UI_MODE) == 3, "on classic SONG screen (ui_mode 3)")
-    check(wram(UI_HIRES) == 0x00, "SONG is in classic Mode 1 (ui_hires == 0)")
-    classic_start = cgdata_writes
-  end},
-  {210, function()
-    local writes_in_classic = cgdata_writes - classic_start
-    check(writes_in_classic == 0, "HDMA is disabled in classic Mode 1 (0 writes)")
+    check(wram(UI_HIRES) == 0x80, "SONG is in Mode 5 hi-res")
     cleanup()
   end},
 }
