@@ -45,7 +45,7 @@ local coldata_writes = 0
 local cgadd_writes = 0
 local last_cgdata = 0
 local last_coldata = 0
-local dark_cgdata_seen = false
+local band_cgdata_seen = false
 local norm_cgdata_seen = false
 
 emu.addMemoryCallback(function(addr, val)
@@ -61,7 +61,7 @@ emu.addMemoryCallback(function(addr, val)
     local word = cgdata_byte1 | (val << 8)
     cgdata_byte1 = nil
     last_cgdata = word
-    if word == 0x0420 then dark_cgdata_seen = true end
+    if word == 0x0C62 then band_cgdata_seen = true end
     if word == 0x0841 then norm_cgdata_seen = true end
   end
 end, emu.callbackType.write, 0x002122, 0x002122)
@@ -101,7 +101,7 @@ local plan = {
     check(cgadd_writes > 0, "Channel 1 streamed to CGADD (" .. cgadd_writes .. " writes)")
     check(cgdata_writes > 0, "Channel 2 streamed to CGDATA (" .. cgdata_writes .. " writes)")
     check(coldata_writes > 0, "Channel 3 streamed to COLDATA (" .. coldata_writes .. " writes)")
-    check(dark_cgdata_seen, "Darker beat-row color $0420 streamed via HDMA")
+    check(band_cgdata_seen, "Lighter beat-row color $0C62 streamed via HDMA")
     check(norm_cgdata_seen, "Normal background color $0841 streamed via HDMA")
 
     song_cgdata_start = cgdata_writes
@@ -140,11 +140,14 @@ local plan = {
   {125, function()
     check(wram(UI_MODE) == 16, "X entered FRAME (ui_mode 16)")
     check(wram(UI_HIRES) == 0x80, "FRAME is in Mode 5 hi-res")
+    -- Simulate APU timeout by setting apu_status ($0D) = 1 to verify Rule 12 bugfix
+    poke(0x000D, 1)
     frame_cgdata_start = cgdata_writes
   end},
   {130, function()
     local writes_on_frame = cgdata_writes - frame_cgdata_start
-    check(writes_on_frame > 0, "HDMA is re-enabled on FRAME (" .. writes_on_frame .. " writes)")
+    check(writes_on_frame > 0, "HDMA is re-enabled on FRAME with apu_status=1 (" .. writes_on_frame .. " writes)")
+    poke(0x000D, 0)          -- Restore apu_status
 
     -- Return to PHRASE, then CHAIN, then SONG
     pad = { x = true }
