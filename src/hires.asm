@@ -128,6 +128,7 @@ nmi_hr:
     sta MDMAEN
     stz hr_paldirty
 @done:
+    jsl ih_nmi              ; INSTR graphics upload (instrhr.asm, bank 8)
     rtl
 
 ; --- screen entry: switch the text layer to hi-res ---------------------------

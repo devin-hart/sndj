@@ -398,6 +398,7 @@ driver_blob_end:
 ; the Mode 5 text renderer + hi-res SONG (UI rewrite spike), bank 7
 .INCLUDE "hires.asm"
 .INCLUDE "framescr.asm"
+.INCLUDE "instrhr.asm"       ; bank 8: hi-res INSTR graphics panel
 
 .BANK 0 SLOT 0
 ; --- internal header (hand-rolled; checksum fixed by tools/fixsum.py) --------

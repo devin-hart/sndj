@@ -78,6 +78,8 @@ python tools/makecmdhelp.py tools/commands.csv (Join-Path $build "cmdhelp.inc")
 if ($LASTEXITCODE -ne 0) { throw "makecmdhelp.py failed" }
 python tools/sndj_pool.py (Join-Path $build "pool.bin")
 if ($LASTEXITCODE -ne 0) { throw "sndj_pool.py failed" }
+python tools/makepeaks.py (Join-Path $build "pool.bin") (Join-Path $build "peaks.bin")
+if ($LASTEXITCODE -ne 0) { throw "makepeaks.py failed" }
 
 # 4. SPC700 driver
 Write-Host "Assembling SPC700 driver..."
