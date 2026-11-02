@@ -37,6 +37,9 @@ frame_enter:
     and #$07
     sta fr_trk
     stz fr_left
+
+; --- return to FRAME from HELP or LIVE (retaining fr_row/fr_step/fr_trk) -------
+frame_reenter:
     lda cur_y
     pha
     lda ed_col
@@ -167,6 +170,7 @@ frame_update:
     bne @nav_done           ; A held: map navigation owns the d-pad
     lda blk_mode
     bne @nav_done           ; block select stretches inside the phrase
+    jsr fr_shoulders
     rep #$20
 .ACCU 16
     lda pad_held
@@ -236,6 +240,45 @@ frame_update:
     jmp fr_draw_head
 
 ; d-pad: cursor across columns/tracks and down through chain steps
+; L/R shoulders: move one track left/right
+fr_shoulders:
+    rep #$20
+.ACCU 16
+    lda pad_pressed
+    and #PAD_L
+    sep #$20
+.ACCU 8
+    beq @try_r
+    lda fr_trk
+    dec a
+    and #$07
+    sta fr_trk
+    bra @moved
+@try_r:
+    rep #$20
+.ACCU 16
+    lda pad_pressed
+    and #PAD_R
+    sep #$20
+.ACCU 8
+    beq @done
+    lda fr_trk
+    inc a
+    and #$07
+    sta fr_trk
+@moved:
+    stz tap_live
+    lda fr_left
+    pha
+    jsr fr_scroll
+    pla
+    cmp fr_left
+    beq @done
+    lda #$01
+    sta fr_full
+@done:
+    rts
+
 fr_nav:
     rep #$20
 .ACCU 16
@@ -820,8 +863,19 @@ fr_draw_cell:
     jsr fr_attr
 .ACCU 8
 +
+    jsl row_is_kit_l
+    bcc @plain_note
+    cmp #$04
+    beq @slice_note
+    jsl draw_kit_name_l
+    bra @note_drawn
+@slice_note:
+    jsl draw_slice_name_l
+    bra @note_drawn
+@plain_note:
     lda str_buf + 32
     jsl draw_note_l
+@note_drawn:
     rep #$20
 .ACCU 16
     lda #ATTR_TEXT
@@ -1004,8 +1058,19 @@ fr_draw_info:
     lda #ATTR_TEXT
     jsr fr_attr
 .ACCU 8
+    jsl row_is_kit_l
+    bcc @plain_info_note
+    cmp #$04
+    beq @slice_info_note
+    jsl draw_kit_name_l
+    bra @info_note_drawn
+@slice_info_note:
+    jsl draw_slice_name_l
+    bra @info_note_drawn
+@plain_info_note:
     lda str_buf + 32
     jsl draw_note_l
+@info_note_drawn:
     lda #' ' - 32
     jsl text_puttile_l
     lda str_buf + 33

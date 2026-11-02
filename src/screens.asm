@@ -643,6 +643,11 @@ chan_update:
 ; reopen the screen we were on before LIVE
 screen_reopen:
     lda live_prev
+    cmp #SCREEN_FRAME
+    bne +
+    jsl frame_reenter
+    rts
++
     cmp #SCREEN_PHRASE
     bne +
     jmp phrase_init

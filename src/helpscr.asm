@@ -255,6 +255,11 @@ help_hotkey:
 ; back to the screen the hotkey came from
 help_reopen:
     lda help_prev
+    cmp #SCREEN_FRAME
+    bne +
+    jsl frame_reenter
+    rts
++
     cmp #SCREEN_SONG
     beq @song
     cmp #SCREEN_CHAIN

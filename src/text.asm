@@ -232,3 +232,12 @@ phrase_init_l:
 engine_toggle_l:
     jsr engine_toggle
     rtl
+row_is_kit_l:
+    jsr row_is_kit
+    rtl
+draw_kit_name_l:
+    jsr draw_kit_name
+    rtl
+draw_slice_name_l:
+    jsr draw_slice_name
+    rtl
