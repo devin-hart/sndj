@@ -23,28 +23,57 @@ local function finish(code)
   emu.stop(code)
 end
 
--- Dynamically locate apu_update@done from build/sndj.sym
+-- Dynamically locate symbols from build/sndj.sym
+local info = emu.getRomInfo and emu.getRomInfo() or nil
+local sym_path = info and info.path:gsub("%.sfc$", ".sym") or "build/sndj.sym"
+local rom_path = info and info.path or "build/sndj.sfc"
+
 local apu_done_addr = 0x808C60
-local sym_file = io.open("build/sndj.sym", "r")
+local hr_meters_addr = nil
+local hr_sb_addr = nil
+
+local sym_file = io.open(sym_path, "r") or io.open("build/sndj.sym", "r")
 if sym_file then
   for line in sym_file:lines() do
-    local b, a = line:match("^(%x%x):(%x%x%x%x)%s+apu_update@done")
-    if a then
-      apu_done_addr = (tonumber(b, 16) << 16) | tonumber(a, 16)
-      break
+    local b, a, name = line:match("^(%x%x):(%x%x%x%x)%s+([%w_@]+)")
+    if a and name then
+      local full_addr = (tonumber(b, 16) << 16) | tonumber(a, 16)
+      if name == "apu_update@done" then apu_done_addr = full_addr
+      elseif name == "hr_meters" then hr_meters_addr = full_addr
+      elseif name == "hr_status_bar" then hr_sb_addr = full_addr
+      end
     end
   end
   sym_file:close()
 end
 
-local mock_envx = nil
-emu.addMemoryCallback(function(addr)
-  if mock_envx then
-    for i = 0, 7 do
-      poke(0x00F1 + i, mock_envx[i + 1] or 0)
+-- Find return address of jsr hr_meters inside hr_status_bar
+local hr_meters_ret_addr = nil
+if hr_sb_addr and hr_meters_addr then
+  local rom_file = io.open(rom_path, "rb") or io.open("build/sndj.sfc", "rb")
+  if rom_file then
+    local off = 0x38000 + ((hr_sb_addr & 0xFFFF) - 0x8000)
+    rom_file:seek("set", off)
+    local bytes = rom_file:read(64)
+    rom_file:close()
+    local target = string.char(0x20, hr_meters_addr & 0xFF, (hr_meters_addr >> 8) & 0xFF)
+    local idx = bytes:find(target, 1, true)
+    if idx then
+      hr_meters_ret_addr = hr_sb_addr + (idx - 1) + 3
     end
   end
-end, emu.callbackType.exec, apu_done_addr, apu_done_addr)
+end
+
+local mock_envx = nil
+if apu_done_addr then
+  emu.addMemoryCallback(function(addr)
+    if mock_envx then
+      for i = 0, 7 do
+        poke(0x00F1 + i, mock_envx[i + 1] or 0)
+      end
+    end
+  end, emu.callbackType.exec, apu_done_addr, apu_done_addr)
+end
 
 local function word(a) return emu.read(a, W) + emu.read(a + 1, W) * 256 end
 
@@ -59,6 +88,72 @@ local function hr_glyph(x, y)
     g = (w & 0x3FF) // 2
   end
   return g
+end
+
+local function snapshot_tilemaps()
+  local snap = {}
+  -- BG2 even layer (SHADOW_BG3): 0x0400 .. 0x0400 + 1791 (1792 bytes = 896 words)
+  for a = 0x0400, 0x0400 + 1791, 2 do
+    snap[a] = word(a)
+  end
+  -- BG1 odd layer (SHADOW_HRB): 0x0E00 .. 0x0E00 + 1791 (1792 bytes = 896 words)
+  for a = 0x0E00, 0x0E00 + 1791, 2 do
+    snap[a] = word(a)
+  end
+  return snap
+end
+
+local function get_meter_word_addrs(ui_mode)
+  local addrs = {}
+  local y = 4
+  for t = 0, 7 do
+    local x = (ui_mode == 3) and (5 + t * 4) or (7 + t * 7)
+    local off = y * 64 + (x >> 1) * 2
+    local base = (x % 2 == 0) and 0x0400 or 0x0E00
+    addrs[base + off] = true
+  end
+  return addrs
+end
+
+-- Corruption detection hooks: runs immediately before and after hr_meters executes
+local test_corruption = false
+local snap_before_meters = nil
+local checked_clean_count = 0
+
+if hr_meters_addr and hr_meters_ret_addr then
+  emu.addMemoryCallback(function()
+    -- Poison registers/variables to detect 16-bit indexing bugs:
+    -- tmp0+1 ($0066) = $FB, fr_r ($0D9A) = 5, fr_left ($0D92) = 2
+    poke(0x0066, 0xFB)
+    poke(0x0D9A, 0x05)
+    poke(0x0D92, 0x02)
+
+    if test_corruption then
+      snap_before_meters = snapshot_tilemaps()
+    end
+  end, emu.callbackType.exec, hr_meters_addr, hr_meters_addr)
+
+  emu.addMemoryCallback(function()
+    if test_corruption and snap_before_meters then
+      local snap_after = snapshot_tilemaps()
+      local cur_mode = wram(0x000C)
+      local allowed = get_meter_word_addrs(cur_mode)
+      local corrupted = 0
+      for a, old_w in pairs(snap_before_meters) do
+        local new_w = snap_after[a]
+        if old_w ~= new_w and not allowed[a] then
+          corrupted = corrupted + 1
+          print(string.format("CORRUPTION: tilemap at 0x%04X changed during hr_meters: 0x%04X -> 0x%04X", a, old_w, new_w))
+        end
+      end
+      if corrupted > 0 then
+        check(false, "hr_meters corrupted " .. corrupted .. " tilemap words outside 8 meter cells")
+      else
+        checked_clean_count = checked_clean_count + 1
+      end
+      snap_before_meters = nil
+    end
+  end, emu.callbackType.exec, hr_meters_ret_addr, hr_meters_ret_addr)
 end
 
 local GLYPH_BLOCK   = 64
@@ -101,6 +196,9 @@ local plan = {
     end
     check(all_zero, "SONG: all 8 meters are zero when stopped")
 
+    -- Enable corruption detection across meter updates
+    test_corruption = true
+
     -- Set mock playing and mock envx levels
     poke(0x0016, 1)          -- eng_playing = 1
     mock_envx = { 16, 48, 80, 112, 0, 127, 32, 1 }
@@ -108,6 +206,8 @@ local plan = {
 
   -- 3. Check SONG meters during playback
   {48, function()
+    check(checked_clean_count > 0, "SONG hr_meters verified: zero tilemap words corrupted outside 8 meter cells")
+
     local g0 = hr_glyph(5 + 0 * 4, 4)
     check(g0 == GLYPH_BLOCK14, "SONG track 0 meter (16): " .. g0 .. " == " .. GLYPH_BLOCK14)
     local g1 = hr_glyph(5 + 1 * 4, 4)
@@ -138,6 +238,8 @@ local plan = {
       end
     end
     check(all_zero, "SONG: all 8 meters return to zero when stopped")
+
+    test_corruption = false
 
     -- Navigate to FRAME: SONG -> CHAIN (A+RIGHT) -> PHRASE (A+RIGHT) -> FRAME (X)
     pad = { a = true }
@@ -172,6 +274,9 @@ local plan = {
     end
     check(all_zero, "FRAME: all 8 meters are zero when stopped")
 
+    test_corruption = true
+    checked_clean_count = 0
+
     -- Set mock playing and mock envx
     poke(0x0016, 1)
     mock_envx = { 100, 70, 0, 0, 0, 0, 40, 20 }
@@ -179,6 +284,8 @@ local plan = {
 
   -- 6. Verify FRAME meters during playback
   {88, function()
+    check(checked_clean_count > 0, "FRAME hr_meters verified: zero tilemap words corrupted outside 8 meter cells")
+
     local g0 = hr_glyph(7 + 0 * 7, 4)
     check(g0 == GLYPH_BLOCK, "FRAME track 0 meter (100): " .. g0 .. " == " .. GLYPH_BLOCK)
     local g1 = hr_glyph(7 + 1 * 7, 4)
@@ -205,6 +312,8 @@ local plan = {
       end
     end
     check(all_zero, "FRAME: all 8 meters return to zero when stopped")
+
+    test_corruption = false
 
     print(fails == 0 and "ALL PASS meter.lua" or ("FAILED meter.lua: " .. fails))
     finish(fails)

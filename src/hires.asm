@@ -1432,16 +1432,35 @@ hr_meters:
     sep #$20
 .ACCU 8
     beq @do_meters
-    ldx fr_t
+    lda fr_t
+    cmp #TRACKS
+    bcs +
+    rep #$20
+.ACCU 16
+    and #$00FF
+    tax
+    sep #$20
+.ACCU 8
     lda #$FF
     sta.w hr_meter_lvl,x
-    ldx fr_oldtrk
++
+    lda fr_oldtrk
+    cmp #TRACKS
+    bcs +
+    rep #$20
+.ACCU 16
+    and #$00FF
+    tax
+    sep #$20
+.ACCU 8
+    lda #$FF
     sta.w hr_meter_lvl,x
++
 
 @do_meters:
-    stz tmp0                ; track counter t = 0..7
+    ldy #0                  ; track counter t = 0..7
 @loop:
-    ldx tmp0
+    tyx
     lda eng_playing
     beq @lvl_zero
     lda.w envx_mirror,x
@@ -1473,7 +1492,7 @@ hr_meters:
     ; Position: text_y = 4, text_x from table
     lda #4
     sta text_y
-    ldx tmp0
+    tyx                     ; restore X = track 0..7 from Y
     lda ui_mode
     cmp #SCREEN_SONG
     bne +
@@ -1496,9 +1515,8 @@ hr_meters:
     jsr hr_put
 
 @next:
-    inc tmp0
-    lda tmp0
-    cmp #TRACKS
+    iny
+    cpy #TRACKS
     bne @loop
     rts
 
