@@ -45,6 +45,9 @@ $(BUILD)/logo.bin $(BUILD)/logo.inc: tools/makelogo.py art/sndj-logo.png | $(BUI
 $(BUILD)/help.inc: tools/makehelp.py help.txt tools/commands.csv | $(BUILD)
 	python3 tools/makehelp.py help.txt $(BUILD)/help.inc
 
+$(BUILD)/cmdhelp.inc: tools/makecmdhelp.py tools/commands.csv | $(BUILD)
+	python3 tools/makecmdhelp.py tools/commands.csv $(BUILD)/cmdhelp.inc
+
 $(BUILD)/schemes.bin $(BUILD)/kits.bin $(BUILD)/defaults.bin $(BUILD)/tables.inc $(BUILD)/karptab.inc: tools/maketables.py tools/commands.csv $(wildcard factory/factory.sndjfact) $(wildcard samples/kits.bin) | $(BUILD)
 	python3 tools/maketables.py $(BUILD)
 
@@ -59,7 +62,7 @@ $(BUILD)/driver.spc700.bin: $(BUILD)/driver.o
 	@printf '[objects]\n%s\n' "$(BUILD)/driver.o" > $(BUILD)/linkfile-apu
 	$(WLALINK) -S $(BUILD)/linkfile-apu $@
 
-$(BUILD)/main.o: $(SRCS) $(BUILD)/buildid.inc $(BUILD)/font.bin $(BUILD)/hrfont2.bin $(BUILD)/hrfont4.bin $(BUILD)/hrpal.bin $(BUILD)/logo.bin $(BUILD)/logo.inc $(BUILD)/schemes.bin $(BUILD)/kits.bin $(BUILD)/defaults.bin $(BUILD)/tables.inc $(BUILD)/help.inc $(BUILD)/pool.bin $(BUILD)/driver.spc700.bin
+$(BUILD)/main.o: $(SRCS) $(BUILD)/buildid.inc $(BUILD)/font.bin $(BUILD)/hrfont2.bin $(BUILD)/hrfont4.bin $(BUILD)/hrpal.bin $(BUILD)/logo.bin $(BUILD)/logo.inc $(BUILD)/schemes.bin $(BUILD)/kits.bin $(BUILD)/defaults.bin $(BUILD)/tables.inc $(BUILD)/help.inc $(BUILD)/cmdhelp.inc $(BUILD)/pool.bin $(BUILD)/driver.spc700.bin
 	$(WLA65816) -I src -I $(BUILD) -o $@ src/main.asm
 
 $(BUILD)/linkfile: | $(BUILD)

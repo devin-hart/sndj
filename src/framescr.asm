@@ -962,7 +962,7 @@ fr_draw_info:
     bne +
     ldx #str_fr_empty
     jsr fr_puts
-    rts
+    jmp @clear_rest
 +
     rep #$20
 .ACCU 16
@@ -1073,13 +1073,9 @@ fr_draw_info:
     lda #' ' - 32
     jsl text_puttile_l
 @cmd:
-    rep #$20
-.ACCU 16
-    lda #ATTR_PINK
-    jsr fr_attr
-.ACCU 8
     lda str_buf + 34
-    bne +
+    bne @have_cmd
+    ; No command: draw "--- " in ATTR_DIM
     rep #$20
 .ACCU 16
     lda #ATTR_DIM
@@ -1087,8 +1083,16 @@ fr_draw_info:
 .ACCU 8
     ldx #str_fr_nocmd
     jsr fr_puts
-    rts
-+
+    lda #' ' - 32
+    jsl text_puttile_l
+    bra @cmdhelp
+@have_cmd:
+    rep #$20
+.ACCU 16
+    lda #ATTR_PINK
+    jsr fr_attr
+.ACCU 8
+    lda str_buf + 34
     clc
     adc #'A' - 32 - 1
     jsl text_puttile_l
@@ -1096,6 +1100,81 @@ fr_draw_info:
     jsl text_hex8_l
     lda #' ' - 32
     jsl text_puttile_l
+
+@cmdhelp:
+    ; Draw command help text after V34
+    ; In hi-res: on row 22 after the space (fits in 64 columns)
+    ; In classic: on row 23 (32 columns)
+    lda ui_hires
+    bne +
+    ; Classic: move to row 23, x = 0
+    lda #23
+    sta text_y
+    stz text_x
++
+    rep #$20
+.ACCU 16
+    lda #ATTR_DIM
+    jsr fr_attr
+.ACCU 8
+
+    lda str_buf + 34
+    beq @clear_rest         ; empty command -> clear line
+    cmp #27
+    bcs @clear_rest         ; safety clamp
+
+    rep #$30
+.ACCU 16
+    lda str_buf + 34
+    and #$00FF
+    asl                     ; cmd * 2
+    tax
+    lda.l cmdhelp_ptrs,x
+    tax
+    sep #$20
+.ACCU 8
+    jsr fr_puts
+
+@clear_rest:
+    ; Erase remainder of line with spaces in current ATTR_DIM
+    lda ui_hires
+    bne @hr_clear
+    ; Classic: clear row 22 tail (if text_y == 22), or row 23 tail
+    jsr fr_clear_line
+    lda text_y
+    cmp #22
+    bne @done
+    ; If we were on row 22 (e.g. empty phrase), also clear all of row 23
+    lda #23
+    sta text_y
+    stz text_x
+    jsr fr_clear_line
+    bra @done
+
+@hr_clear:
+    jsr fr_clear_line
+
+@done:
+    rts
+
+; Clears with spaces in current text_attr from text_x to end of line
+fr_clear_line:
+    lda ui_hires
+    bne +
+    lda #32
+    bra ++
++
+    lda #64
+++
+    sta fr_cnt2
+-
+    lda text_x
+    cmp fr_cnt2
+    bcs +
+    lda #' ' - 32
+    jsl text_puttile_l
+    bra -
++
     rts
 
 ; the playhead arrow in the gutter: the row any track plays at this
@@ -1174,5 +1253,7 @@ str_fr_empty: .DB "-- NOTHING AT THIS STEP        ", 0
 str_fr_noins: .DB "--          ", 0
 str_fr_nosmp: .DB "         ", 0
 str_fr_nocmd: .DB "---", 0
+
+.INCLUDE "cmdhelp.inc"
 
 .ENDS

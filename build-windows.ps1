@@ -74,6 +74,8 @@ python tools/makehelp.py help.txt (Join-Path $build "help.inc")
 if ($LASTEXITCODE -ne 0) { throw "makehelp.py failed" }
 python tools/maketables.py $build
 if ($LASTEXITCODE -ne 0) { throw "maketables.py failed" }
+python tools/makecmdhelp.py tools/commands.csv (Join-Path $build "cmdhelp.inc")
+if ($LASTEXITCODE -ne 0) { throw "makecmdhelp.py failed" }
 python tools/sndj_pool.py (Join-Path $build "pool.bin")
 if ($LASTEXITCODE -ne 0) { throw "sndj_pool.py failed" }
 
