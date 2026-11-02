@@ -669,18 +669,16 @@ song_hr_draw:
     sta text_y
     lda #HS_CHX
     sta text_x
-    rep #$20
-.ACCU 16
-    lda #ATTR_DIM
-    sep #$20
-.ACCU 8
     lda tmp0 + 1
     cmp tmp0                ; step == preview_step?
-    bne +
     rep #$20
 .ACCU 16
-    lda #ATTR_HILITE
+    beq +
+    lda #ATTR_DIM
+    bra ++
 +
+    lda #ATTR_HILITE
+++
     jsr hr_attr
 .ACCU 8
     lda tmp0 + 1

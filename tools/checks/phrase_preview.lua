@@ -60,9 +60,9 @@ local plan = {
     -- Track 0 Row 0 has Chain 0. Track 1 Row 0 has $FF (empty).
     poke(SB_SONG + 0, 0)          -- Chain 0
     poke(SB_SONG + 1, 0xFF)       -- Empty
-    -- Chain 0 Step 0 has Phrase 0
+    -- Chain 0 Step 0 has Phrase 0, Transpose +12 (0x0C, drawn in ATTR_PINK)
     poke(SB_CHAINS + 0, 0)        -- Phrase 0
-    poke(SB_CHAINS + 1, 0)        -- Transpose 0
+    poke(SB_CHAINS + 1, 0x0C)     -- Transpose 0x0C (ATTR_PINK)
 
     -- Phrase 0 Row 0: Note = C-4 (index 49), Instr = 1, Cmd = 22 ('V'), Val = 0x34
     poke(SB_PHRASES + 0, 49)      -- Note = C-4
@@ -121,6 +121,15 @@ local plan = {
     -- Check Row 15 (y = 20) label is 0F
     local r15_lbl = hr_str(47, 20, 2)
     check(r15_lbl == "0F", "Phrase Row 15 label: '" .. r15_lbl .. "'")
+
+    -- Check chain-panel step digit palettes:
+    -- Step 0 (previewed) has HILITE palette (2)
+    local s0_pal = (word(0x0400 + 5 * 64 + (38 >> 1) * 2) >> 10) & 7
+    check(s0_pal == 2, "Chain step 0 (previewed) has HILITE palette (2): " .. s0_pal)
+
+    -- Step 1 (below non-zero transpose) has DIM palette (3)
+    local s1_pal = (word(0x0400 + 6 * 64 + (38 >> 1) * 2) >> 10) & 7
+    check(s1_pal == 3, "Chain step 1 (below non-zero transpose) has DIM palette (3): " .. s1_pal)
 
     -- Now move cursor right to Track 1 (which has chain $FF)
     pad = { right = true }
