@@ -85,7 +85,7 @@
 .DEFINE JOY2L    $421A
 .DEFINE JOY2H    $421B
 
-; --- DMA channel 0 (general) / channel 7 register definitions ------------
+; --- DMA channel 0 (general) / channels 1-3 (HDMA) / channel 7 register definitions ------------
 .DEFINE DMAP0    $4300
 .DEFINE BBAD0    $4301
 .DEFINE A1T0L    $4302
@@ -93,6 +93,21 @@
 .DEFINE A1B0     $4304
 .DEFINE DAS0L    $4305
 .DEFINE DAS0H    $4306
+.DEFINE DMAP1    $4310
+.DEFINE BBAD1    $4311
+.DEFINE A1T1L    $4312
+.DEFINE A1T1H    $4313
+.DEFINE A1B1     $4314
+.DEFINE DMAP2    $4320
+.DEFINE BBAD2    $4321
+.DEFINE A1T2L    $4322
+.DEFINE A1T2H    $4323
+.DEFINE A1B2     $4324
+.DEFINE DMAP3    $4330
+.DEFINE BBAD3    $4331
+.DEFINE A1T3L    $4332
+.DEFINE A1T3H    $4333
+.DEFINE A1B3     $4334
 .DEFINE DMAP7    $4370
 .DEFINE BBAD7    $4371
 .DEFINE A1T7L    $4372

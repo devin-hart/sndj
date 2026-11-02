@@ -11,6 +11,7 @@ text_clear:
     beq +
     stz ui_hires            ; back to Mode 1: the NMI restores the classic
     stz ui_xoff             ; palette image
+    stz HDMAEN              ; Mode 1: no hi-res HDMA tint
     lda #$01
     sta pal_dirty
 +

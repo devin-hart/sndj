@@ -31,6 +31,7 @@ Vec_NMI:
     jsl nmi_hr
     bra @no_pal
 @classic:
+    stz HDMAEN              ; Mode 1: no hi-res HDMA tint
     lda #$09                ; Mode 1, BG3 priority (re-asserted: SONG
     sta BGMODE              ; may have switched to Mode 5)
     lda #$04

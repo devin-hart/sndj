@@ -129,6 +129,7 @@ nmi_hr:
     stz hr_paldirty
 @done:
     jsl ih_nmi              ; INSTR graphics upload (instrhr.asm, bank 8)
+    jsr hr_hdma_nmi         ; Beat-row HDMA tint (G6)
     rtl
 
 ; --- screen entry: switch the text layer to hi-res ---------------------------
@@ -1518,6 +1519,270 @@ hr_meters:
     cpy #TRACKS
     bne @loop
     rts
+
+; --- G6: Beat-row HDMA tint (SONG and FRAME screens in Mode 5) ----------------
+; Tints every 4th grid row darker by updating CGRAM 0 and COLDATA via HDMA.
+; Grid starts at row y=5 (scanline 40). In Mode 5, main screen backdrop is
+; CGRAM 0, and sub screen backdrop is COLDATA. Both must be updated simultaneously
+; to avoid vertical striping.
+; Channels:
+;   Channel 1: writes $00 to $2121 (CGADD)
+;   Channel 2: writes 2 bytes (low, high) to $2122 (CGDATA)
+;   Channel 3: writes 2 bytes ($20/21, $C1/C2) to $2132 (COLDATA)
+; HDMAEN: $0E (bits 1, 2, 3)
+
+.DEFINE HDMA_NORM_COL  $0841
+.DEFINE HDMA_DARK_COL  $0420
+.DEFINE HDMA_NORM_CD1  $21
+.DEFINE HDMA_NORM_CD2  $C2
+.DEFINE HDMA_DARK_CD1  $20
+.DEFINE HDMA_DARK_CD2  $C1
+
+hr_hdma_nmi:
+    lda ui_mode
+    cmp #SCREEN_SONG
+    beq @active
+    cmp #SCREEN_FRAME
+    beq @active
+    stz HDMAEN
+    stz CGADD
+    lda #$41
+    sta CGDATA
+    lda #$08
+    sta CGDATA
+    rts
+@active:
+    rep #$20
+.ACCU 16
+    lda #$2100              ; DMAP1 = mode 0 (1 reg, 1 byte), BBAD1 = $21 (CGADD)
+    sta DMAP1
+    lda #$2202              ; DMAP2 = mode 2 (1 reg, 2 bytes), BBAD2 = $22 (CGDATA)
+    sta DMAP2
+    lda #$3202              ; DMAP3 = mode 2 (1 reg, 2 bytes), BBAD3 = $32 (COLDATA)
+    sta DMAP3
+    sep #$20
+.ACCU 8
+    lda #$07                ; Bank 7
+    sta A1B1
+    sta A1B2
+    sta A1B3
+
+    ; Phase 0..3: FRAME is always phase 0; SONG is song_top & 3
+    lda #0
+    ldx ui_mode
+    cpx #SCREEN_FRAME
+    beq +
+    lda song_top
+    and #$03
++
+    rep #$30
+.ACCU 16
+.INDEX 16
+    and #$0003
+    asl
+    tax
+    lda.l hdma_cgadd_ptrs,x
+    sta A1T1L
+    lda.l hdma_cgdata_ptrs,x
+    sta A1T2L
+    lda.l hdma_coldata_ptrs,x
+    sta A1T3L
+    sep #$20
+.ACCU 8
+    lda #$0E                ; Enable HDMA channels 1, 2, 3
+    sta HDMAEN
+    rts
+
+; --- Phase 0: beat row at grid row 0 (y=5, scanline 40) ---
+hdma_cgadd_p0:
+    .DB 40, $00
+    .DB 8,  $00
+    .DB 24, $00
+    .DB 8,  $00
+    .DB 24, $00
+    .DB 8,  $00
+    .DB 24, $00
+    .DB 8,  $00
+    .DB 80, $00
+    .DB 0
+
+hdma_cgdata_p0:
+    .DB 40
+    .DW HDMA_NORM_COL
+    .DB 8
+    .DW HDMA_DARK_COL
+    .DB 24
+    .DW HDMA_NORM_COL
+    .DB 8
+    .DW HDMA_DARK_COL
+    .DB 24
+    .DW HDMA_NORM_COL
+    .DB 8
+    .DW HDMA_DARK_COL
+    .DB 24
+    .DW HDMA_NORM_COL
+    .DB 8
+    .DW HDMA_DARK_COL
+    .DB 80
+    .DW HDMA_NORM_COL
+    .DB 0
+
+hdma_coldata_p0:
+    .DB 40, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 8,  HDMA_DARK_CD1, HDMA_DARK_CD2
+    .DB 24, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 8,  HDMA_DARK_CD1, HDMA_DARK_CD2
+    .DB 24, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 8,  HDMA_DARK_CD1, HDMA_DARK_CD2
+    .DB 24, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 8,  HDMA_DARK_CD1, HDMA_DARK_CD2
+    .DB 80, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 0
+
+; --- Phase 1: beat row at grid row 3 (y=8, scanline 64) ---
+hdma_cgadd_p1:
+    .DB 64, $00
+    .DB 8,  $00
+    .DB 24, $00
+    .DB 8,  $00
+    .DB 24, $00
+    .DB 8,  $00
+    .DB 24, $00
+    .DB 8,  $00
+    .DB 56, $00
+    .DB 0
+
+hdma_cgdata_p1:
+    .DB 64
+    .DW HDMA_NORM_COL
+    .DB 8
+    .DW HDMA_DARK_COL
+    .DB 24
+    .DW HDMA_NORM_COL
+    .DB 8
+    .DW HDMA_DARK_COL
+    .DB 24
+    .DW HDMA_NORM_COL
+    .DB 8
+    .DW HDMA_DARK_COL
+    .DB 24
+    .DW HDMA_NORM_COL
+    .DB 8
+    .DW HDMA_DARK_COL
+    .DB 56
+    .DW HDMA_NORM_COL
+    .DB 0
+
+hdma_coldata_p1:
+    .DB 64, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 8,  HDMA_DARK_CD1, HDMA_DARK_CD2
+    .DB 24, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 8,  HDMA_DARK_CD1, HDMA_DARK_CD2
+    .DB 24, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 8,  HDMA_DARK_CD1, HDMA_DARK_CD2
+    .DB 24, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 8,  HDMA_DARK_CD1, HDMA_DARK_CD2
+    .DB 56, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 0
+
+; --- Phase 2: beat row at grid row 2 (y=7, scanline 56) ---
+hdma_cgadd_p2:
+    .DB 56, $00
+    .DB 8,  $00
+    .DB 24, $00
+    .DB 8,  $00
+    .DB 24, $00
+    .DB 8,  $00
+    .DB 24, $00
+    .DB 8,  $00
+    .DB 64, $00
+    .DB 0
+
+hdma_cgdata_p2:
+    .DB 56
+    .DW HDMA_NORM_COL
+    .DB 8
+    .DW HDMA_DARK_COL
+    .DB 24
+    .DW HDMA_NORM_COL
+    .DB 8
+    .DW HDMA_DARK_COL
+    .DB 24
+    .DW HDMA_NORM_COL
+    .DB 8
+    .DW HDMA_DARK_COL
+    .DB 24
+    .DW HDMA_NORM_COL
+    .DB 8
+    .DW HDMA_DARK_COL
+    .DB 64
+    .DW HDMA_NORM_COL
+    .DB 0
+
+hdma_coldata_p2:
+    .DB 56, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 8,  HDMA_DARK_CD1, HDMA_DARK_CD2
+    .DB 24, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 8,  HDMA_DARK_CD1, HDMA_DARK_CD2
+    .DB 24, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 8,  HDMA_DARK_CD1, HDMA_DARK_CD2
+    .DB 24, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 8,  HDMA_DARK_CD1, HDMA_DARK_CD2
+    .DB 64, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 0
+
+; --- Phase 3: beat row at grid row 1 (y=6, scanline 48) ---
+hdma_cgadd_p3:
+    .DB 48, $00
+    .DB 8,  $00
+    .DB 24, $00
+    .DB 8,  $00
+    .DB 24, $00
+    .DB 8,  $00
+    .DB 24, $00
+    .DB 8,  $00
+    .DB 72, $00
+    .DB 0
+
+hdma_cgdata_p3:
+    .DB 48
+    .DW HDMA_NORM_COL
+    .DB 8
+    .DW HDMA_DARK_COL
+    .DB 24
+    .DW HDMA_NORM_COL
+    .DB 8
+    .DW HDMA_DARK_COL
+    .DB 24
+    .DW HDMA_NORM_COL
+    .DB 8
+    .DW HDMA_DARK_COL
+    .DB 24
+    .DW HDMA_NORM_COL
+    .DB 8
+    .DW HDMA_DARK_COL
+    .DB 72
+    .DW HDMA_NORM_COL
+    .DB 0
+
+hdma_coldata_p3:
+    .DB 48, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 8,  HDMA_DARK_CD1, HDMA_DARK_CD2
+    .DB 24, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 8,  HDMA_DARK_CD1, HDMA_DARK_CD2
+    .DB 24, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 8,  HDMA_DARK_CD1, HDMA_DARK_CD2
+    .DB 24, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 8,  HDMA_DARK_CD1, HDMA_DARK_CD2
+    .DB 72, HDMA_NORM_CD1, HDMA_NORM_CD2
+    .DB 0
+
+hdma_cgadd_ptrs:
+    .DW hdma_cgadd_p0, hdma_cgadd_p1, hdma_cgadd_p2, hdma_cgadd_p3
+hdma_cgdata_ptrs:
+    .DW hdma_cgdata_p0, hdma_cgdata_p1, hdma_cgdata_p2, hdma_cgdata_p3
+hdma_coldata_ptrs:
+    .DW hdma_coldata_p0, hdma_coldata_p1, hdma_coldata_p2, hdma_coldata_p3
 
 hr_pal:
     .INCBIN "hrpal.bin"
