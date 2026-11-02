@@ -17,6 +17,18 @@ local function pitch()
     256 * emu.read(3, emu.memType.spcDspRegisters)
 end
 local function word(a) return wram(a) + 256 * wram(a + 1) end
+-- classic tilemap attr bits of text cell (x, y); on a hi-res screen
+-- (ui_hires $0D66, hires.asm) decode the two layers back to the classic
+-- encoding (the odd layer stores palettes 1 and 4 swapped)
+local function cell_attr(x, y)
+  if (wram(0x0D66) & 0x80) == 0 then return word(0x400 + y * 64 + x * 2) & 0xFC00 end
+  local off = y * 64 + (x >> 1) * 2
+  if x % 2 == 0 then return word(0x400 + off) & 0xFC00 end
+  local w = word(0x0E00 + off)
+  local pal = (w >> 10) & 7
+  if pal == 1 then pal = 4 elseif pal == 4 then pal = 1 end
+  return (w & 0xE000) | (pal << 10)
+end
 local function check(cond, msg)
   if cond then print("PASS " .. msg)
   else print("FAIL " .. msg); fails = fails + 1 end
@@ -67,11 +79,11 @@ emu.addEventCallback(function()
     run = nil
   elseif frames == 342 then
     check(wram(0x91) == 1, "one Down press selected the next INSTR field")
-    check((word(0x400 + 4 * 64 + 11 * 2) & 0xFC00) == 0x2400,
+    check(cell_attr(11, 4) == 0x2400,
       "Down repainted the new INSTR cursor row")
   elseif frames == 348 then
     check(wram(0x91) == 0, "one Up press selected the previous INSTR field")
-    check((word(0x400 + 3 * 64 + 11 * 2) & 0xFC00) == 0x2400,
+    check(cell_attr(11, 3) == 0x2400,
       "Up repainted the new INSTR cursor row")
   elseif frames == 352 then
     local pc, pt = result.phrase[1], result.phrase[2]

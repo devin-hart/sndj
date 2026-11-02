@@ -125,8 +125,8 @@
 ; hi-res text (Mode 5, hires.asm)
 .DEFINE VRAM_HR_BG1_CHR $2000 ; 4bpp font, odd columns ($2000-$3810)
 .DEFINE VRAM_HR_BG2_CHR $4000 ; 2bpp font, even columns ($4000-$4C08)
-.DEFINE VRAM_HR_BG1_MAP $5000
-.DEFINE VRAM_HR_BG2_MAP $5400
+.DEFINE VRAM_HR_BG1_MAP $7000 ; (moved from $5000: BG2 tiles 386-1023 at
+.DEFINE VRAM_HR_BG2_MAP $7400 ;  $4C10-$5FFF hold the INSTR graphics)
 
 ; --- Text attributes (tilemap word high bits) ------------------------------
 ; vhopppcc: priority set, palette 0-3

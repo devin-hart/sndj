@@ -161,6 +161,11 @@ instr_init:
     stz if_cur
     stz tap_live
     jsr text_clear
+    lda opt_hires
+    beq +
+    jsl hr_enter            ; OPTIONS HI-RES: graphics panel on the right
+    jsl ih_enter            ; (instrhr.asm, bank 8)
++
     stz text_x
     lda #1
     sta text_y
@@ -294,6 +299,10 @@ if_set_x:
     rts
 
 instr_update:
+    bit ui_hires
+    bpl +
+    jsl ih_frame            ; hi-res: one waveform/envelope drawing step
++
     rep #$20
 .ACCU 16
     lda pad_pressed
@@ -623,6 +632,10 @@ if_nudge:
     rts
 
 instr_draw:
+    bit ui_hires
+    bpl +
+    jsl ih_tick             ; hi-res: redraw the waveform/envelope on change
++
     ; dynamic layout: visible fields pack onto consecutive rows with a
     ; blanked spacer between groups — a type's hidden fields cost no
     ; space, and rows are fully overdrawn so layouts can shift freely
